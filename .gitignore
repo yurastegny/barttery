@@ -1,0 +1,7 @@
+.build/
+Barttery.app/
+*.dmg
+AppIcon.icns
+**/.DS_Store
+.vscode/
+.claude/
