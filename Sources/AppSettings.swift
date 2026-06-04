@@ -9,6 +9,7 @@ class AppSettings: ObservableObject {
     @Published var notificationThresholds: [String: Set<Int>] = [:]
 
     private var bag = Set<AnyCancellable>()
+    private var isRevertingLaunchAtLogin = false
 
     private init() {
         launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -18,11 +19,19 @@ class AppSettings: ObservableObject {
             notificationThresholds = decoded.mapValues { Set($0) }
         }
 
-        $launchAtLogin.dropFirst().sink { enabled in
+        $launchAtLogin.dropFirst().sink { [weak self] enabled in
+            guard let self, !isRevertingLaunchAtLogin else { return }
             do {
                 if enabled { try SMAppService.mainApp.register() }
                 else       { try SMAppService.mainApp.unregister() }
-            } catch {}
+            } catch {
+                NSLog("Failed to update Launch at Login: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.isRevertingLaunchAtLogin = true
+                    self.launchAtLogin = SMAppService.mainApp.status == .enabled
+                    self.isRevertingLaunchAtLogin = false
+                }
+            }
         }.store(in: &bag)
 
         $notificationThresholds.dropFirst().sink { thresholds in

@@ -12,6 +12,12 @@ class IDeviceReader: NSObject {
     var onPadUpdate:   ((Int?, Bool?, String?) -> Void)?
     var onWatchUpdate: ((WatchBattery?) -> Void)?
 
+    private enum ScanUpdate {
+        case phone(level: Int, charging: Bool, name: String?)
+        case pad(level: Int, charging: Bool, name: String?)
+        case watch(WatchBattery)
+    }
+
     private var timer: Timer?
     private var binDir: String = ""
     private var libDir: String = ""
@@ -22,7 +28,7 @@ class IDeviceReader: NSObject {
     private var lastWatchSuccess: Date?
     private var isScanning   = false
     private var pendingScan  = false
-    private let foundLock    = NSLock()
+    private let scanQueue = DispatchQueue(label: "Barttery.IDeviceReader.scan", qos: .utility)
     private var serviceBrowser: NetServiceBrowser?
     private var usbNotifyPort: IONotificationPortRef?
     private var usbIterator: io_iterator_t = 0
@@ -92,41 +98,85 @@ class IDeviceReader: NSObject {
     }
 
     private func scan(immediate: Bool = false) {
-        if isScanning {
-            if immediate { pendingScan = true }
-            return
-        }
-        isScanning = true
-        pendingScan = false
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.scanDevices()
-            self?.isScanning = false
-            if self?.pendingScan == true {
-                self?.scan(immediate: true)
+        scanQueue.async { [weak self] in
+            guard let self else { return }
+            if isScanning {
+                if immediate { pendingScan = true }
+                return
+            }
+            isScanning = true
+            pendingScan = false
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let updates = self.scanDevices()
+                self.scanQueue.async {
+                    self.finishScan(updates)
+                }
             }
         }
     }
 
-    private func scanDevices() {
+    private func scanDevices() -> [ScanUpdate] {
         let usbUDIDs  = run("idevice_id", ["-n"]).lines.filter { !$0.isEmpty }
         let allUDIDs  = run("idevice_id", ["-l"]).lines.filter { !$0.isEmpty }
         let wifiUDIDs = allUDIDs.filter { !usbUDIDs.contains($0) }
 
-        foundPhone = false
-        foundPad   = false
-
         let group = DispatchGroup()
+        let updatesLock = NSLock()
+        var updates: [ScanUpdate] = []
         let allPairs = usbUDIDs.map { ($0, true) } + wifiUDIDs.map { ($0, false) }
         for (udid, usb) in allPairs {
             group.enter()
             DispatchQueue.global(qos: .utility).async {
-                self.readDevice(udid: udid, usb: usb)
+                let deviceUpdates = self.readDevice(udid: udid, usb: usb)
+                updatesLock.lock()
+                updates.append(contentsOf: deviceUpdates)
+                updatesLock.unlock()
                 group.leave()
             }
         }
         group.wait()
 
+        return updates
+    }
+
+    private func finishScan(_ updates: [ScanUpdate]) {
+        foundPhone = updates.contains { update in
+            if case .phone = update { return true }
+            return false
+        }
+        foundPad = updates.contains { update in
+            if case .pad = update { return true }
+            return false
+        }
+
         let now = Date()
+        if foundPhone { lastPhoneSuccess = now }
+        if foundPad { lastPadSuccess = now }
+        if updates.contains(where: {
+            if case .watch = $0 { return true }
+            return false
+        }) {
+            lastWatchSuccess = now
+        }
+
+        for update in updates {
+            switch update {
+            case let .phone(level, charging, name):
+                DispatchQueue.main.async { [weak self] in
+                    self?.onPhoneUpdate?(level, charging, name)
+                }
+            case let .pad(level, charging, name):
+                DispatchQueue.main.async { [weak self] in
+                    self?.onPadUpdate?(level, charging, name)
+                }
+            case let .watch(watch):
+                DispatchQueue.main.async { [weak self] in
+                    self?.onWatchUpdate?(watch)
+                }
+            }
+        }
+
         if !foundPhone, let t = lastPhoneSuccess, now.timeIntervalSince(t) > 900 {
             lastPhoneSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onPhoneUpdate?(nil, nil, nil) }
@@ -139,60 +189,55 @@ class IDeviceReader: NSObject {
             lastPadSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onPadUpdate?(nil, nil, nil) }
         }
-    }
 
-    private func readDevice(udid: String, usb: Bool) {
-        let flag = usb ? ["-n"] : [String]()
-
-        let info = run("ideviceinfo", flag + ["-u", udid])
-        guard !info.isEmpty else { return }
-
-        let deviceClass = info.value(for: "DeviceClass").lowercased()
-        guard deviceClass == "iphone" || deviceClass == "ipad" else { return }
-
-        let battInfo = run("ideviceinfo", flag + ["-q", "com.apple.mobile.battery", "-u", udid])
-        guard let level = Int(battInfo.value(for: "BatteryCurrentCapacity")), level >= 0 else { return }
-
-        let charging = battInfo.value(for: "BatteryIsCharging").lowercased() == "true"
-        let name     = info.value(for: "DeviceName")
-
-        if deviceClass == "iphone" {
-            foundLock.lock()
-            foundPhone = true
-            lastPhoneSuccess = Date()
-            foundLock.unlock()
-            UserDefaults.standard.set(level,   forKey: "phone.lastBattery")
-            UserDefaults.standard.set(Date(),  forKey: "phone.lastSyncTime")
-            if !name.isEmpty { UserDefaults.standard.set(name, forKey: "phone.lastName") }
-            DispatchQueue.main.async { [weak self] in
-                self?.onPhoneUpdate?(level, charging, name.isEmpty ? nil : name)
-            }
-            syncWatch(udid: udid, flag: flag)
-        } else {
-            foundLock.lock()
-            foundPad = true
-            lastPadSuccess = Date()
-            foundLock.unlock()
-            UserDefaults.standard.set(level,   forKey: "pad.lastBattery")
-            UserDefaults.standard.set(Date(),  forKey: "pad.lastSyncTime")
-            if !name.isEmpty { UserDefaults.standard.set(name, forKey: "pad.lastName") }
-            DispatchQueue.main.async { [weak self] in
-                self?.onPadUpdate?(level, charging, name.isEmpty ? nil : name)
-            }
+        isScanning = false
+        if pendingScan {
+            pendingScan = false
+            scan(immediate: true)
         }
     }
 
-    private func syncWatch(udid: String, flag: [String]) {
+    private func readDevice(udid: String, usb: Bool) -> [ScanUpdate] {
+        let flag = usb ? ["-n"] : [String]()
+
+        let info = run("ideviceinfo", flag + ["-u", udid])
+        guard !info.isEmpty else { return [] }
+
+        let deviceClass = info.value(for: "DeviceClass").lowercased()
+        guard deviceClass == "iphone" || deviceClass == "ipad" else { return [] }
+
+        let battInfo = run("ideviceinfo", flag + ["-q", "com.apple.mobile.battery", "-u", udid])
+        guard let level = Int(battInfo.value(for: "BatteryCurrentCapacity")), level >= 0 else { return [] }
+
+        let charging = battInfo.value(for: "BatteryIsCharging").lowercased() == "true"
+        let name     = info.value(for: "DeviceName")
+        let displayName = name.isEmpty ? nil : name
+
+        if deviceClass == "iphone" {
+            UserDefaults.standard.set(level,   forKey: "phone.lastBattery")
+            UserDefaults.standard.set(Date(),  forKey: "phone.lastSyncTime")
+            if !name.isEmpty { UserDefaults.standard.set(name, forKey: "phone.lastName") }
+            var updates: [ScanUpdate] = [.phone(level: level, charging: charging, name: displayName)]
+            if let watch = syncWatch(udid: udid, flag: flag) {
+                updates.append(.watch(watch))
+            }
+            return updates
+        } else {
+            UserDefaults.standard.set(level,   forKey: "pad.lastBattery")
+            UserDefaults.standard.set(Date(),  forKey: "pad.lastSyncTime")
+            if !name.isEmpty { UserDefaults.standard.set(name, forKey: "pad.lastName") }
+            return [.pad(level: level, charging: charging, name: displayName)]
+        }
+    }
+
+    private func syncWatch(udid: String, flag: [String]) -> WatchBattery? {
         let watchOut = run("comptest", [udid])
-        guard let watch = parseWatch(watchOut) else { return }
-        lastWatchSuccess = Date()
+        guard let watch = parseWatch(watchOut) else { return nil }
         UserDefaults.standard.set(watch.level,      forKey: "watch.lastLevel")
         UserDefaults.standard.set(watch.isCharging, forKey: "watch.lastCharging")
         UserDefaults.standard.set(watch.name,       forKey: "watch.lastName")
         UserDefaults.standard.set(Date(),           forKey: "watch.lastSyncTime")
-        DispatchQueue.main.async { [weak self] in
-            self?.onWatchUpdate?(watch)
-        }
+        return watch
     }
 
     private func parseWatch(_ output: String) -> WatchBattery? {

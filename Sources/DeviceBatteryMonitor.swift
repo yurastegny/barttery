@@ -37,7 +37,7 @@ class DeviceBatteryMonitor: ObservableObject {
     @Published var airPodsBattery:   AirPodsBattery? = nil
     @Published var airPodsConnected: Bool = false
     @Published var airPodsName:      String = "AirPods"
-    @Published var accessories:      [AccessoryBattery] = []
+    @Published var accessories:      [AccessoryBattery] = cachedAccessories()
 
     private var macReader:       MacBatteryReader?
     private var ideviceReader:   IDeviceReader?
@@ -178,18 +178,12 @@ class DeviceBatteryMonitor: ObservableObject {
     }
 
     private func setupAccessories() {
-        if let cached = UserDefaults.standard.array(forKey: "accessories.last") as? [[String: Any]] {
-            accessories = cached.compactMap {
-                guard let name = $0["name"] as? String, let level = $0["level"] as? Int else { return nil }
-                return AccessoryBattery(name: name, level: level, charging: false)
-            }
-        }
-
         let reader = AccessoryReader()
         reader.onUpdate = { [weak self] items in
             self?.accessories = items
             let cache = items.map { ["name": $0.name, "level": $0.level] as [String: Any] }
             UserDefaults.standard.set(cache, forKey: "accessories.last")
+            UserDefaults.standard.set(Date(), forKey: "accessories.lastSyncTime")
             for item in items {
                 self?.syncTimes[item.batteryDevice.rawValue] = Date()
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
@@ -215,4 +209,19 @@ private func cachedBattery(_ device: String) -> Int? {
     guard let t = ud.object(forKey: "\(device).lastSyncTime") as? Date,
           Date().timeIntervalSince(t) < 1800 else { return nil }
     return ud.object(forKey: "\(device).lastBattery") as? Int
+}
+
+private func cachedAccessories() -> [AccessoryBattery] {
+    let ud = UserDefaults.standard
+    guard let t = ud.object(forKey: "accessories.lastSyncTime") as? Date,
+          Date().timeIntervalSince(t) < 1800,
+          let cached = ud.array(forKey: "accessories.last") as? [[String: Any]]
+    else { return [] }
+
+    return cached.compactMap {
+        guard let name = $0["name"] as? String,
+              let level = $0["level"] as? Int
+        else { return nil }
+        return AccessoryBattery(name: name, level: level, charging: false)
+    }
 }

@@ -33,6 +33,8 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
     var onUpdate: ((AirPodsBattery?) -> Void)?
     var onConnect: ((String) -> Void)?
 
+    private static let hideTimeout: TimeInterval = 10
+
     private var central: CBCentralManager?
     private var hideTimer: Timer?
     private var syncTimer: Timer?
@@ -192,7 +194,7 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
 
     private func resetHideTimer() {
         hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
+        hideTimer = Timer.scheduledTimer(withTimeInterval: Self.hideTimeout, repeats: false) { [weak self] _ in
             self?.onUpdate?(nil)
         }
     }
