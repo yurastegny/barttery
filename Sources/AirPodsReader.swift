@@ -242,7 +242,7 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
               let lvl = bat.value(forKey: "level") as? Double,
               lvl > 0
         else { return nil }
-        return Int(round(lvl * 100)).clamped(to: 1...100)
+        return Int(ceil(lvl * 100)).clamped(to: 1...100)
     }
 
     // MARK: - Bluetooth connect / disconnect
