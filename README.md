@@ -38,11 +38,11 @@ Notifications — get alerted when any device drops to 20%, or reaches 80% / 100
 Right now, in my region it's not possible to get an Apple Developer account. Without it, Apple does not trust the app. But you can open it using the following method:
 
 1. Try to open the app by double-clicking it — you'll see a warning:
-**"App Name" can't be opened because the developer cannot be verified**.
+**"Barttery" can't be opened because the developer cannot be verified**.
 2. Open **System Settings** → in the sidebar, click **Privacy & Security**.
 3. Scroll down to the **Security** section.
 4. You'll see a message like:
-**"App Name" was blocked from use because it is not from an identified developer**.
+**"Barttery" was blocked from use because it is not from an identified developer**.
 Next to it, there will be a button "**Open Anyway**" (sometimes just "**Open**").
 5. Click "**Open Anyway**".
 6. Enter your administrator password, then confirm by clicking "**Open**".
