@@ -18,7 +18,8 @@ Notifications — get alerted when any device drops to 20%, or reaches 80% / 100
 
 ## Screenshot
 
-<img src="./img/screenshot.png" alt="Screenshot" width="520"/>
+<img src="./img/light.png" alt="Screenshot" width="460"/>
+<img src="./img/dark.png" alt="Screenshot" width="460"/>
 
 ## Requirements
 

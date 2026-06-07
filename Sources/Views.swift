@@ -223,6 +223,8 @@ struct DeviceRow: View {
 struct BatteryBar: View {
     let level: Int
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Capsule()
             .fill(Color.secondary.opacity(0.2))
@@ -235,7 +237,10 @@ struct BatteryBar: View {
             }
     }
 
-    private var barColor: Color { batteryColor(level) }
+    private var barColor: Color {
+        let color = batteryColor(level)
+        return level > 40 && colorScheme == .dark ? color.opacity(0.65) : color
+    }
 }
 
 // MARK: - AirPods row
@@ -441,13 +446,15 @@ struct ThresholdButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(enabled ? (colorScheme == .light ? Color.white : Color.primary.opacity(0.1)) : Color.clear)
+            .background(enabled && colorScheme == .light ? Color.white : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(
-                        enabled ? Color.primary : Color.primary.opacity(0.2),
-                        lineWidth: 0.5
+                        enabled && colorScheme == .dark
+                            ? Color.white
+                            : enabled ? Color.primary : Color.primary.opacity(0.2),
+                        lineWidth: enabled && colorScheme == .dark ? 0.75 : 0.5
                     )
             )
             .contentShape(Rectangle())
