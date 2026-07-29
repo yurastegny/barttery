@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 
+private struct RefreshButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(configuration.isPressed ? .primary : .secondary)
+    }
+}
+
 // MARK: - Menu bar icon
 
 struct MenuBarLabel: View {
@@ -20,9 +27,8 @@ struct MenuBarLabel: View {
 struct MenuContentView: View {
     @EnvironmentObject var monitor: DeviceBatteryMonitor
     @ObservedObject private var settings = AppSettings.shared
-    @State private var refreshRotation: Double = 0
-    @State private var windowTimer: Timer?
 
+    @State private var windowTimer: Timer?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -32,18 +38,11 @@ struct MenuContentView: View {
                 Spacer()
                 Button {
                     monitor.refresh()
-                    withAnimation(.linear(duration: 0.3)) {
-                        refreshRotation += 360
-                    }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .rotationEffect(.degrees(refreshRotation))
-                    .contentShape(Rectangle())
+                    Text("Refresh")
+                        .font(.system(size: 14, weight: .regular))
                 }
-                .buttonStyle(.borderless)
-                .help("Refresh")
+                .buttonStyle(RefreshButtonStyle())
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
