@@ -36,14 +36,9 @@ struct MenuContentView: View {
                         refreshRotation += 360
                     }
                 } label: {
-                    Image(nsImage: {
-                        let img = NSImage(contentsOf: Bundle.module.url(forResource: "reload", withExtension: "svg")!)!
-                        img.size = NSSize(width: 14, height: 14)
-                        return img
-                    }())
-                    .renderingMode(.template)
+                    Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
-                    .frame(width: 14, height: 14)
                     .rotationEffect(.degrees(refreshRotation))
                     .contentShape(Rectangle())
                 }
