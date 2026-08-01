@@ -203,38 +203,105 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
 
     private let prefPath = NSHomeDirectory() + "/Library/Preferences/com.apple.AudioAccessory.plist"
     private var fileWatcher: DispatchSourceFileSystemObject?
+    // If plist hasn't been modified in 30 min, treat as stale and fall back to BLE.
+    // Prevents pre-macOS-update cached values from overriding live BLE data.
+    private let staleTimeout: TimeInterval = 1800
 
     private func watchPlist() {
         let fd = open(prefPath, O_RDONLY)
         guard fd >= 0 else { return }
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
-        src.setEventHandler { [weak self] in self?.refreshPlist() }
+        src.setEventHandler { [weak self] in
+            self?.refreshPlist()
+            // File was atomically replaced — fd is now stale, re-open watcher on new inode
+            self?.fileWatcher?.cancel()
+            self?.fileWatcher = nil
+            self?.watchPlist()
+        }
         src.setCancelHandler { close(fd) }
         src.resume()
         fileWatcher = src
     }
 
     private func refreshPlist() {
-        guard let prefs = NSDictionary(contentsOfFile: prefPath),
-              let data = prefs["lastSeenBatteryInfosV2"] as? Data,
-              let u = try? NSKeyedUnarchiver(forReadingFrom: data)
-        else { plistLevels = nil; return }
-
-        u.requiresSecureCoding = false
-        guard let dict = u.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? NSDictionary
-        else { plistLevels = nil; return }
-
-        for (_, v) in dict {
-            let info = v as AnyObject
-            plistLevels = PlistLevels(
-                left:  plistLevel(info, sel: "batteryLeft"),
-                right: plistLevel(info, sel: "batteryRight"),
-                cas:   plistLevel(info, sel: "batteryCase")
-            )
+        // Staleness guard: if the file hasn't been touched recently, BLE data is more accurate
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: prefPath),
+           let mod = attrs[.modificationDate] as? Date,
+           Date().timeIntervalSince(mod) > staleTimeout {
+            plistLevels = nil
             return
         }
+
+        guard let prefs = NSDictionary(contentsOfFile: prefPath) else {
+            plistLevels = nil; return
+        }
+        // Try V3 key first (macOS 26+), fall back to V2
+        let outerData = (prefs["lastSeenBatteryInfosV3"] as? Data)
+                     ?? (prefs["lastSeenBatteryInfosV2"] as? Data)
+        guard let outerData else { plistLevels = nil; return }
+
+        // The archive may contain multiple entries for the same physical device (one per
+        // connection session). Parse $objects directly to find the one with the highest
+        // lstS (CFAbsoluteTime last-seen), then read btyl (battery level 0–1) from it.
+        // Field names: bale=left, bari=right, baco=case (ba+le/ri/co abbreviations).
+        if let levels = plistLevelsFromArchive(outerData) {
+            plistLevels = levels
+            return
+        }
+
         plistLevels = nil
+    }
+
+    private func plistLevelsFromArchive(_ data: Data) -> PlistLevels? {
+        guard let archive = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil) as? NSDictionary,
+              let objects = archive["$objects"] as? NSArray
+        else { return nil }
+
+        // CFKeyedArchiverUID description: "<CFKeyedArchiverUID 0x...>{value = N}"
+        func uidIndex(_ v: Any?) -> Int? {
+            guard let obj = v as? NSObject else { return nil }
+            let desc = obj.description
+            guard let s = desc.range(of: "{value = "),
+                  let e = desc.range(of: "}", range: s.upperBound..<desc.endIndex)
+            else { return nil }
+            return Int(String(desc[s.upperBound..<e.lowerBound]).trimmingCharacters(in: .whitespaces))
+        }
+        func resolveObj(_ v: Any?) -> NSDictionary? {
+            guard let idx = uidIndex(v), idx > 0, idx < objects.count else { return nil }
+            return objects[idx] as? NSDictionary
+        }
+        func className(_ d: NSDictionary) -> String? {
+            resolveObj(d["$class"])?["$classname"] as? String
+        }
+
+        var bestLstS: Double = 0
+        var bestLevels: PlistLevels?
+
+        for obj in objects {
+            guard let d = obj as? NSDictionary,
+                  className(d) == "AADeviceBatteryInfo"
+            else { continue }
+
+            var maxLstS: Double = 0
+            var lv = [String: Double]()
+            for field in ["bale", "bari", "baco"] {
+                guard let bat = resolveObj(d[field]) else { continue }
+                if let t = bat["lstS"] as? Double { maxLstS = max(maxLstS, t) }
+                if let l = bat["btyl"] as? Double { lv[field] = l }
+            }
+            guard maxLstS > bestLstS else { continue }
+            bestLstS = maxLstS
+
+            func level(_ f: String) -> Int? {
+                guard let v = lv[f], v > 0 else { return nil }
+                return Int(ceil(v * 100)).clamped(to: 1...100)
+            }
+            bestLevels = PlistLevels(left: level("bale"), right: level("bari"), cas: level("baco"))
+        }
+
+        return bestLevels
     }
 
     private func plistLevel(_ info: AnyObject, sel: String) -> Int? {
