@@ -11,7 +11,8 @@ struct AccessoryBattery {
         let lower = name.lowercased()
         if lower.contains("keyboard") { return "keyboard" }
         if lower.contains("trackpad") { return "trackpad" }
-        return "magicmouse"
+        if lower.contains("magic")    { return "magicmouse" }
+        return "computermouse"
     }
 
     var iconChar: String? {

@@ -43,14 +43,20 @@ class DeviceBatteryMonitor: ObservableObject {
     private var ideviceReader:   IDeviceReader?
     private var airPodsReader:   AirPodsReader?
     private var accessoryReader: AccessoryReader?
+    private var bleReader:       BLEDeviceReader?
     private var refreshTimer:    Timer?
     private var retryTimer:      Timer?
+
+    // Separate buckets merged into `accessories` for display.
+    private var appleAccessories: [AccessoryBattery] = []
+    private var bleAccessories:   [AccessoryBattery] = []
 
     init() {
         setupMac()
         setupIDevice()
         setupAirPods()
         setupAccessories()
+        setupBLEDevices()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -60,6 +66,7 @@ class DeviceBatteryMonitor: ObservableObject {
         macReader?.readNow()
         accessoryReader?.readOnce()
         ideviceReader?.scanNow()
+        bleReader?.refresh()
     }
 
     func onPopupOpen() {
@@ -180,17 +187,40 @@ class DeviceBatteryMonitor: ObservableObject {
     private func setupAccessories() {
         let reader = AccessoryReader()
         reader.onUpdate = { [weak self] items in
-            self?.accessories = items
+            guard let self else { return }
+            appleAccessories = items
+            mergeAccessories()
             let cache = items.map { ["name": $0.name, "level": $0.level] as [String: Any] }
             UserDefaults.standard.set(cache, forKey: "accessories.last")
             UserDefaults.standard.set(Date(), forKey: "accessories.lastSyncTime")
             for item in items {
-                self?.syncTimes[item.batteryDevice.rawValue] = Date()
+                syncTimes[item.batteryDevice.rawValue] = Date()
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
             }
         }
         reader.startMonitoring()
         accessoryReader = reader
+    }
+
+    private func setupBLEDevices() {
+        let reader = BLEDeviceReader()
+        reader.onUpdate = { [weak self] items in
+            guard let self else { return }
+            bleAccessories = items
+            mergeAccessories()
+            for item in items {
+                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
+            }
+        }
+        reader.startMonitoring()
+        bleReader = reader
+    }
+
+    private func mergeAccessories() {
+        // Apple accessories take priority; BLE fills in devices not already listed by name.
+        let appleNames = Set(appleAccessories.map { $0.name })
+        let bleOnly = bleAccessories.filter { !appleNames.contains($0.name) }
+        accessories = (appleAccessories + bleOnly).sorted { $0.name < $1.name }
     }
 
     // MARK: - Icon

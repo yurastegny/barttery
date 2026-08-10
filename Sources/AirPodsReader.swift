@@ -129,7 +129,6 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
     private func handleAdvertisement(_ mfr: Data) {
         guard isConnected else { return }
         resetHideTimer()
-        refreshPlist()
 
         let status       = mfr[7]
         let flip         = (status & 0x20) != 0
@@ -286,7 +285,7 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
 
             var maxLstS: Double = 0
             var lv = [String: Double]()
-            for field in ["bale", "bari", "baco"] {
+            for field in ["bale", "bari", "baca"] {
                 guard let bat = resolveObj(d[field]) else { continue }
                 if let t = bat["lstS"] as? Double { maxLstS = max(maxLstS, t) }
                 if let l = bat["btyl"] as? Double { lv[field] = l }
@@ -298,7 +297,7 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
                 guard let v = lv[f], v > 0 else { return nil }
                 return Int(ceil(v * 100)).clamped(to: 1...100)
             }
-            bestLevels = PlistLevels(left: level("bale"), right: level("bari"), cas: level("baco"))
+            bestLevels = PlistLevels(left: level("bale"), right: level("bari"), cas: level("baca"))
         }
 
         return bestLevels
