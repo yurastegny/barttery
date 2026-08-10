@@ -4,7 +4,7 @@
 
 # Barttery
 
-A macOS menu bar app that shows battery levels for all your Apple devices in one place.
+A macOS menu bar app that shows battery levels for all your devices in one place.
 
 ## Features
 
@@ -13,6 +13,7 @@ A macOS menu bar app that shows battery levels for all your Apple devices in one
 - Apple Watch — battery level via paired iPhone
 - AirPods — headphones and case battery levels with charging indicators
 - Magic Keyboard, Mouse & Trackpad — battery levels via Bluetooth
+- BLE devices — Logitech MX Master and any other Bluetooth LE peripheral with a standard Battery Service
 
 Notifications — get alerted when any device drops to 20%, or reaches 80% / 100% while charging. Configure per device.
 
