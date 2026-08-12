@@ -7,9 +7,15 @@ struct AccessoryBattery {
     let level: Int
     let charging: Bool
 
+    private var isKeyboard: Bool {
+        let lower = name.lowercased()
+        return lower.contains("keyboard") || lower.contains(" keys") || lower.contains("k380")
+            || lower.contains("k780") || lower.contains("k800") || lower.contains("k850")
+    }
+
     var icon: String {
         let lower = name.lowercased()
-        if lower.contains("keyboard") { return "keyboard" }
+        if isKeyboard                 { return "keyboard" }
         if lower.contains("trackpad") { return "trackpad" }
         if lower.contains("magic")    { return "magicmouse" }
         return "computermouse"
@@ -21,7 +27,7 @@ struct AccessoryBattery {
 
     var batteryDevice: BatteryDevice {
         let lower = name.lowercased()
-        if lower.contains("keyboard") { return .keyboard }
+        if isKeyboard                 { return .keyboard }
         if lower.contains("trackpad") { return .trackpad }
         return .mouse
     }
@@ -120,6 +126,10 @@ class AccessoryReader: NSObject {
                   let battery = props["BatteryPercent"] as? Int, battery > 0,
                   let product = props["Product"] as? String, !product.isEmpty
             else { continue }
+
+            // Skip Logitech devices — handled by LogitechReader with better data.
+            let vendorID = props["VendorID"] as? Int ?? 0
+            guard vendorID != 0x046D else { continue }
 
             let lower = product.lowercased()
             guard lower.contains("keyboard") || lower.contains("mouse") || lower.contains("trackpad")

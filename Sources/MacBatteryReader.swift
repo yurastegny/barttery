@@ -52,7 +52,7 @@ class MacBatteryReader {
         let max     = props["AppleRawMaxCapacity"]     as? Int ?? 0
         guard max > 0 else { return nil }
 
-        let level       = Int(ceil(Double(current) / Double(max) * 100))
+        let level       = Int((Double(current) / Double(max) * 100).rounded())
         let isCharging  = props["IsCharging"]         as? Bool ?? false
         let acConnected = props["ExternalConnected"]  as? Bool ?? false
 

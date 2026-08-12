@@ -34,7 +34,9 @@ run: build
 	open $(BUNDLE)
 
 install: build
-	cp -r $(BUNDLE) /Applications/
+	rm -rf /Applications/$(BUNDLE)
+	ditto $(BUNDLE) /Applications/$(BUNDLE)
+	xattr -dr com.apple.quarantine /Applications/$(BUNDLE) 2>/dev/null || true
 	@echo "=> Installed to /Applications/$(BUNDLE)"
 
 dmg: build

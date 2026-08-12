@@ -44,12 +44,17 @@ class DeviceBatteryMonitor: ObservableObject {
     private var airPodsReader:   AirPodsReader?
     private var accessoryReader: AccessoryReader?
     private var bleReader:       BLEDeviceReader?
+    private var logiReader:      LogitechReader?
     private var refreshTimer:    Timer?
     private var retryTimer:      Timer?
 
     // Separate buckets merged into `accessories` for display.
     private var appleAccessories: [AccessoryBattery] = []
+    private var logiAccessories:  [AccessoryBattery] = []
     private var bleAccessories:   [AccessoryBattery] = []
+    // Names of devices currently visible via IOKit HID++, updated at the start of each refresh.
+    // Blocks BLE from racing in while battery queries are still running.
+    private var claimedByLogi:    Set<String>        = []
 
     init() {
         setupMac()
@@ -57,6 +62,7 @@ class DeviceBatteryMonitor: ObservableObject {
         setupAirPods()
         setupAccessories()
         setupBLEDevices()
+        setupLogitech()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -67,6 +73,7 @@ class DeviceBatteryMonitor: ObservableObject {
         accessoryReader?.readOnce()
         ideviceReader?.scanNow()
         bleReader?.refresh()
+        logiReader?.refresh()
     }
 
     func onPopupOpen() {
@@ -208,7 +215,11 @@ class DeviceBatteryMonitor: ObservableObject {
             guard let self else { return }
             bleAccessories = items
             mergeAccessories()
+            let logiNames = Set(logiAccessories.map { $0.name }).union(claimedByLogi)
             for item in items {
+                // Seed Logi's fallback level so charging state can be shown even on first read.
+                logiReader?.hintLevel(item.level, forDevice: item.name)
+                guard !logiNames.contains(item.name) else { continue }
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
             }
         }
@@ -216,11 +227,42 @@ class DeviceBatteryMonitor: ObservableObject {
         bleReader = reader
     }
 
+    private func setupLogitech() {
+        let reader = LogitechReader()
+        reader.onDevicesFound = { [weak self] names in
+            guard let self else { return }
+            claimedByLogi = names
+            // Drop cached data for devices that are no longer visible in IOKit.
+            logiAccessories = logiAccessories.filter { names.contains($0.name) }
+            mergeAccessories()
+        }
+        reader.onUpdate = { [weak self] items in
+            guard let self else { return }
+            // Keep last known values when query returns empty (e.g. device briefly
+            // unresponsive during charging). Stale entries are overwritten on next
+            // successful query; devices that truly disappear also leave claimedByLogi.
+            if !items.isEmpty { logiAccessories = items }
+            mergeAccessories()
+            for item in items {
+                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
+            }
+        }
+        reader.startMonitoring()
+        logiReader = reader
+    }
+
     private func mergeAccessories() {
-        // Apple accessories take priority; BLE fills in devices not already listed by name.
         let appleNames = Set(appleAccessories.map { $0.name })
-        let bleOnly = bleAccessories.filter { !appleNames.contains($0.name) }
-        accessories = (appleAccessories + bleOnly).sorted { $0.name < $1.name }
+        let logiNames  = Set(logiAccessories.map { $0.name })
+        // Exclude BLE entries for phones/pads already shown in dedicated rows.
+        let ownedNames = Set([phoneName, padName].filter { !$0.isEmpty })
+        let logiOnly   = logiAccessories.filter { !appleNames.contains($0.name) }
+        let bleOnly    = bleAccessories.filter {
+            !appleNames.contains($0.name) &&
+            !logiNames.contains($0.name) &&
+            !ownedNames.contains($0.name)
+        }
+        accessories = (appleAccessories + logiOnly + bleOnly).sorted { $0.name < $1.name }
     }
 
     // MARK: - Icon

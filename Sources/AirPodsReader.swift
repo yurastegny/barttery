@@ -243,7 +243,7 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
         // The archive may contain multiple entries for the same physical device (one per
         // connection session). Parse $objects directly to find the one with the highest
         // lstS (CFAbsoluteTime last-seen), then read btyl (battery level 0–1) from it.
-        // Field names: bale=left, bari=right, baco=case (ba+le/ri/co abbreviations).
+        // Field names: bale=left, bari=right, baca=case (ba+le/ri/ca abbreviations).
         if let levels = plistLevelsFromArchive(outerData) {
             plistLevels = levels
             return

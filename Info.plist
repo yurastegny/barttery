@@ -30,5 +30,7 @@
     <false/>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Used to display AirPods battery levels</string>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>Used to query Logitech MX mouse battery level and charging state via HID++. You can deny this — the app will still show battery level via Bluetooth.</string>
 </dict>
 </plist>

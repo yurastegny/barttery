@@ -10,19 +10,24 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     var onUpdate: (([AccessoryBattery]) -> Void)?
 
     private var central: CBCentralManager?
-    private var peripherals: [UUID: CBPeripheral] = [:]
-    private var levels:      [UUID: Int]          = [:]
-    private var names:       [UUID: String]       = [:]
+    private var peripherals:     [UUID: CBPeripheral]           = [:]
+    private var battChars:       [UUID: CBCharacteristic]       = [:]
+    private var levels:          [UUID: Int]                    = [:]
+    private var names:           [UUID: String]                 = [:]
+    private var previousLevels:  [UUID: Int]                    = [:]
+    private var chargingStates:  [UUID: Bool]                   = [:]
 
     private static let battService  = CBUUID(string: "180F")
     private static let battCharUUID = CBUUID(string: "2A19")
 
-    // Service UUIDs to query for already-connected peripherals. Battery Service first;
-    // HID Service included so we discover any BLE HID device that CoreBluetooth can see.
+    // Service UUIDs to query for already-connected peripherals.
+    // 180A (Device Information) is intentionally excluded — it's too generic and matches
+    // phones, tablets, and other devices we don't want to show as accessories.
+    // Note: macOS gives IOKit exclusive access to 1812 (HID) on BLE input devices, so
+    // CoreBluetooth can only find them via 180F (Battery Service).
     private static let probedServices: [CBUUID] = [
         CBUUID(string: "180F"),  // Battery Service
         CBUUID(string: "1812"),  // HID
-        CBUUID(string: "180A"),  // Device Information
     ]
 
     func startMonitoring() {
@@ -33,6 +38,9 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     func refresh() {
         guard central?.state == .poweredOn else { return }
         connectExisting()
+        for (id, ch) in battChars {
+            peripherals[id]?.readValue(for: ch)
+        }
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -66,6 +74,9 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
     func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         levels.removeValue(forKey: p.identifier)
+        battChars.removeValue(forKey: p.identifier)
+        previousLevels.removeValue(forKey: p.identifier)
+        chargingStates.removeValue(forKey: p.identifier)
         peripherals.removeValue(forKey: p.identifier)
         names.removeValue(forKey: p.identifier)
         publish()
@@ -78,13 +89,26 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor svc: CBService, error: Error?) {
         guard let ch = svc.characteristics?.first(where: { $0.uuid == Self.battCharUUID }) else { return }
+        battChars[p.identifier] = ch
         p.readValue(for: ch)
         if ch.properties.contains(.notify) { p.setNotifyValue(true, for: ch) }
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
-        guard ch.uuid == Self.battCharUUID, let level = ch.value?.first else { return }
-        levels[p.identifier] = Int(level)
+        guard ch.uuid == Self.battCharUUID, let raw = ch.value?.first else { return }
+        let newLevel = Int(raw)
+        let id = p.identifier
+        // Reject obviously invalid readings: below 5% (device would disconnect before reaching
+        // this level in practice) or an impossible sudden drop of >50 points in one reading.
+        guard newLevel >= 5 else { return }
+        if let prev = previousLevels[id], newLevel < prev - 50 { return }
+        // Infer charging from trend: if level rose since the last reading, the device is charging.
+        if let prev = previousLevels[id] {
+            if newLevel > prev      { chargingStates[id] = true  }
+            else if newLevel < prev { chargingStates[id] = false }
+        }
+        previousLevels[id] = newLevel
+        levels[id] = newLevel
         publish()
     }
 
@@ -93,7 +117,8 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             guard let level = levels[p.identifier],
                   let name  = names[p.identifier]
             else { return nil }
-            return AccessoryBattery(name: name, level: level, charging: false)
+            let charging = chargingStates[p.identifier] ?? false
+            return AccessoryBattery(name: name, level: level, charging: charging)
         }.sorted { $0.name < $1.name }
         onUpdate?(items)
     }

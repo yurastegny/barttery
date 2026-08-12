@@ -105,7 +105,7 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             : "Time to charge — \(level)% remaining"
         content.sound = .default
         let req = UNNotificationRequest(
-            identifier: "battery-\(device.rawValue)-\(level)-\(Date().timeIntervalSince1970)",
+            identifier: "battery-\(device.rawValue)-\(level)",
             content: content, trigger: nil
         )
         UNUserNotificationCenter.current().add(req)

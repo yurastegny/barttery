@@ -260,10 +260,9 @@ struct AirPodsRow: View {
                                 Text(name).font(.system(size: 17, weight: .regular))
                                 Spacer()
                                 HStack(spacing: 6) {
-                                    if battery.leftCharging || battery.rightCharging {
-                                        Image(systemName: "bolt.fill")
-                                            .font(.system(size: 12, weight: .medium))
-                                    }
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .opacity(battery.leftCharging || battery.rightCharging ? 1 : 0)
                                     Text("\(level)%").font(.system(size: 17, weight: .regular))
                                 }
                             }
@@ -295,11 +294,10 @@ struct AirPodsRow: View {
                         HStack {
                             Text("\(name) Case").font(.system(size: 17, weight: .regular))
                             Spacer()
-                            HStack(spacing: 0) {
-                                if battery.caseCharging {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.system(size: 12, weight: .medium))
-                                }
+                            HStack(spacing: 6) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .opacity(battery.caseCharging ? 1 : 0)
                                 Text("\(caseLevel)%").font(.system(size: 17, weight: .regular))
                             }
                         }
@@ -343,10 +341,9 @@ struct AccessoryRow: View {
                         Text(accessory.name).font(.system(size: 17, weight: .regular))
                         Spacer()
                         HStack(spacing: 6) {
-                            if accessory.charging {
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .opacity(accessory.charging ? 1 : 0)
                             Text("\(accessory.level)%").font(.system(size: 17, weight: .regular))
                         }
                     }
