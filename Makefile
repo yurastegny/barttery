@@ -8,15 +8,7 @@ SIGN      ?= Apple Development: yura@yura.me (69Z678PHDM)
 
 all: build
 
-AppIcon.icns: icon.png Makefile
-	@ICONSET=$$(mktemp -d)/AppIcon.iconset && mkdir "$$ICONSET" && \
-	for size in 16 32 128 256 512; do \
-	  sips -z $$size $$size icon.png --out "$$ICONSET/icon_$${size}x$${size}.png" > /dev/null; \
-	  sips -z $$((size*2)) $$((size*2)) icon.png --out "$$ICONSET/icon_$${size}x$${size}@2x.png" > /dev/null; \
-	done && \
-	iconutil -c icns "$$ICONSET" -o AppIcon.icns
-
-build: AppIcon.icns
+build:
 	swift build -c release --arch arm64 --arch x86_64
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
