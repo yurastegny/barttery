@@ -52,7 +52,7 @@ class LogitechReader {
         let access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
         if access == kIOHIDAccessTypeUnknown,
            !UserDefaults.standard.bool(forKey: Self.skippedKey) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                 self?.requestPermissionWithExplanation()
             }
         }
@@ -63,7 +63,6 @@ class LogitechReader {
     }
 
     private func requestPermissionWithExplanation() {
-        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Logitech Device Battery"
         alert.informativeText = "To monitor the battery level and charging status of Logitech devices, Input Monitoring permission is required. Skip this if you don't have any Logitech devices."

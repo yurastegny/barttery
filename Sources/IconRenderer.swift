@@ -133,9 +133,14 @@ private func drawPause(x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) {
 }
 
 func renderPlugIcon() -> NSImage {
-    let img = NSImage(systemSymbolName: "powerplug", accessibilityDescription: nil) ?? NSImage()
-    img.isTemplate = true
-    return img
+    let size = CGSize(width: 18, height: 14)
+    let image = NSImage(size: size, flipped: false) { rect in
+        guard let symbol = NSImage(systemSymbolName: "powerplug", accessibilityDescription: nil) else { return false }
+        symbol.draw(in: rect)
+        return true
+    }
+    image.isTemplate = true
+    return image
 }
 
 // MARK: - Font
