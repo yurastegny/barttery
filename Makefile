@@ -1,7 +1,7 @@
 APP        = Barttery
 BUNDLE     = Barttery.app
 CONTENTS   = $(BUNDLE)/Contents
-BIN_DIR    = .build/apple/Products/Release
+BIN_DIR    = .build/release
 SIGN      ?= Apple Development: yura@yura.me (69Z678PHDM)
 
 .PHONY: all build run install clean
@@ -9,14 +9,16 @@ SIGN      ?= Apple Development: yura@yura.me (69Z678PHDM)
 all: build
 
 build:
-	swift build -c release --arch arm64 --arch x86_64
+	swift build -c release --arch arm64
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
 	@cp Info.plist $(CONTENTS)/
 	@cp AppIcon.icns $(CONTENTS)/Resources/
-	@cp -r $(BIN_DIR)/Barttery_Barttery.bundle $(CONTENTS)/Resources/
-	@BNDL=$(CONTENTS)/Resources/Barttery_Barttery.bundle; \
-	for f in $$BNDL/*.dylib $$BNDL/idevice_id $$BNDL/ideviceinfo $$BNDL/comptest; do \
+	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest $(CONTENTS)/Resources/
+	@cp Sources/Resources/lib/*.dylib $(CONTENTS)/Resources/
+	@cp Sources/Resources/reload.svg $(CONTENTS)/Resources/
+	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest
+	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" "$$f"; \
 	done; \
 	codesign --force --sign "$(SIGN)" --entitlements Barttery.entitlements $(BUNDLE)

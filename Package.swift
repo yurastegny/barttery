@@ -8,7 +8,6 @@ let package = Package(
         .executableTarget(
             name: "Barttery",
             path: "Sources",
-            resources: [.process("Resources")],
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ],

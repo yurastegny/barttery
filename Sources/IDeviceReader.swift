@@ -34,9 +34,9 @@ class IDeviceReader: NSObject {
     private var usbIterator: io_iterator_t = 0
 
     func start() {
-        guard let resURL = Bundle.module.resourceURL else { return }
+        guard let resURL = Bundle.main.resourceURL else { return }
         binDir = resURL.path
-        libDir = resURL.path  // dylibs are at bundle root (SPM flattens subdirs)
+        libDir = resURL.path
         prepareBinaries()
         scan()
         timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
