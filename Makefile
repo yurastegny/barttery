@@ -1,7 +1,7 @@
 APP        = Barttery
 BUNDLE     = Barttery.app
 CONTENTS   = $(BUNDLE)/Contents
-BIN_DIR    = .build/release
+BIN_DIR    = .build/apple/Products/Release
 SIGN      ?= Apple Development: yura@yura.me (69Z678PHDM)
 
 .PHONY: all build run install clean
@@ -17,12 +17,12 @@ AppIcon.icns: icon.png Makefile
 	iconutil -c icns "$$ICONSET" -o AppIcon.icns
 
 build: AppIcon.icns
-	swift build -c release
+	swift build -c release --arch arm64 --arch x86_64
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
 	@cp Info.plist $(CONTENTS)/
 	@cp AppIcon.icns $(CONTENTS)/Resources/
-	@cp -r .build/arm64-apple-macosx/release/Barttery_Barttery.bundle $(CONTENTS)/Resources/
+	@cp -r $(BIN_DIR)/Barttery_Barttery.bundle $(CONTENTS)/Resources/
 	@BNDL=$(CONTENTS)/Resources/Barttery_Barttery.bundle; \
 	for f in $$BNDL/*.dylib $$BNDL/idevice_id $$BNDL/ideviceinfo $$BNDL/comptest; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" "$$f"; \
