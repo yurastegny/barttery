@@ -71,7 +71,6 @@ class DeviceBatteryMonitor: ObservableObject {
     func refresh() {
         macReader?.readNow()
         accessoryReader?.readOnce()
-        ideviceReader?.scanNow()
         bleReader?.refresh()
         logiReader?.refresh()
     }

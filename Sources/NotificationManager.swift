@@ -1,7 +1,7 @@
 import UserNotifications
 import AppKit
 
-enum BatteryDevice: String {
+enum BatteryDevice: String, CaseIterable {
     case mac, phone, pad, watch, airPods, keyboard, mouse, trackpad
 
     var label: String {
@@ -32,6 +32,16 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+        for device in BatteryDevice.allCases {
+            var state = DeviceState()
+            if let level = UserDefaults.standard.object(forKey: "nm.\(device.rawValue).level") as? Int {
+                state.lastLevel = level
+            }
+            if let arr = UserDefaults.standard.array(forKey: "nm.\(device.rawValue).notified") as? [Int] {
+                state.notifiedThresholds = Set(arr)
+            }
+            states[device] = state
+        }
     }
 
     func userNotificationCenter(
@@ -61,7 +71,10 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     func check(device: BatteryDevice, level: Int, isCharging: Bool) {
         let settings = AppSettings.shared
         var state = states[device] ?? DeviceState()
-        defer { states[device] = state }
+        defer {
+            states[device] = state
+            persist(device: device, state: state)
+        }
 
         // Charging started or level rose → reset discharge notifications
         if isCharging && !state.wasCharging {
@@ -77,8 +90,9 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
         // Charging thresholds: 80% and 100%
         for threshold in [80, 100] {
-            if isCharging,
-               let prev, prev < threshold, level >= threshold,
+            // Fire when crossing from below to at/above — even if prev is nil (first observation while charging).
+            let crossed = isCharging && level >= threshold && (prev == nil || prev! < threshold)
+            if crossed,
                !state.notifiedThresholds.contains(threshold),
                settings.isThresholdEnabled(device: device, threshold: threshold) {
                 send(device: device, level: threshold, isCharging: true)
@@ -88,13 +102,24 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
 
         // Discharge threshold: 20%
-        guard !isCharging, let prev, level < prev else { return }
+        // Fire when level drops to/below 20% — prev check uses 0 as sentinel for first observation.
+        let effectivePrev = prev ?? (level <= 20 ? 21 : level)
+        guard !isCharging, effectivePrev > 20, level <= 20 else { return }
         if !state.notifiedThresholds.contains(20),
-           prev > 20, level <= 20,
            settings.isThresholdEnabled(device: device, threshold: 20) {
             send(device: device, level: 20, isCharging: false)
             state.notifiedThresholds.insert(20)
         }
+    }
+
+    private func persist(device: BatteryDevice, state: DeviceState) {
+        let ud = UserDefaults.standard
+        if let level = state.lastLevel {
+            ud.set(level, forKey: "nm.\(device.rawValue).level")
+        } else {
+            ud.removeObject(forKey: "nm.\(device.rawValue).level")
+        }
+        ud.set(Array(state.notifiedThresholds), forKey: "nm.\(device.rawValue).notified")
     }
 
     private func send(device: BatteryDevice, level: Int, isCharging: Bool) {

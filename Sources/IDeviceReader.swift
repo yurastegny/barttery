@@ -19,6 +19,7 @@ class IDeviceReader: NSObject {
     }
 
     private var timer: Timer?
+    private var retryTimer: Timer?
     private var binDir: String = ""
     private var libDir: String = ""
     private var foundPhone  = false
@@ -39,7 +40,7 @@ class IDeviceReader: NSObject {
         libDir = resURL.path
         prepareBinaries()
         scan()
-        timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.scan()
         }
         startBonjourWatch()
@@ -177,15 +178,17 @@ class IDeviceReader: NSObject {
             }
         }
 
-        if !foundPhone, let t = lastPhoneSuccess, now.timeIntervalSince(t) > 900 {
+
+        let staleTimeout: TimeInterval = 86400
+        if !foundPhone, let t = lastPhoneSuccess, now.timeIntervalSince(t) > staleTimeout {
             lastPhoneSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onPhoneUpdate?(nil, nil, nil) }
         }
-        if !foundPhone, let t = lastWatchSuccess, now.timeIntervalSince(t) > 900 {
+        if !foundPhone, let t = lastWatchSuccess, now.timeIntervalSince(t) > staleTimeout {
             lastWatchSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(nil) }
         }
-        if !foundPad, let t = lastPadSuccess, now.timeIntervalSince(t) > 900 {
+        if !foundPad, let t = lastPadSuccess, now.timeIntervalSince(t) > staleTimeout {
             lastPadSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onPadUpdate?(nil, nil, nil) }
         }
@@ -194,6 +197,20 @@ class IDeviceReader: NSObject {
         if pendingScan {
             pendingScan = false
             scan(immediate: true)
+            return
+        }
+
+        // If we expected to find a device but didn't, retry quickly.
+        let missedPhone = !foundPhone && lastPhoneSuccess != nil
+        let missedPad   = !foundPad   && lastPadSuccess   != nil
+        if missedPhone || missedPad {
+            retryTimer?.invalidate()
+            retryTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+                self?.scan(immediate: true)
+            }
+        } else {
+            retryTimer?.invalidate()
+            retryTimer = nil
         }
     }
 
