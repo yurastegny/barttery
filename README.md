@@ -30,7 +30,6 @@ Notifications — get alerted when any device drops to 20%, or reaches 80% / 100
 - macOS 13 Ventura or later
 - For iPhone / iPad / Apple Watch: connect via USB cable to Mac and enable Wi-Fi sync in Finder. On the first USB connection, you'll need to **Trust** the computer.
 
-> iPhone, iPad and Apple Watch remain visible for up to 24 hours after the last successful sync — Apple does not allow apps to force a connection, so the app waits for the device to become available on its own. To see when the last sync happened, expand the device row in the menu.
 ## Installation
 
 - Download the latest DMG file from the [releases page](https://github.com/yurastegny/barttery/releases)
