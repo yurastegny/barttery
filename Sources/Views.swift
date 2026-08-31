@@ -32,9 +32,17 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Barttery")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(.secondary)
+                Button {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/yurastegny/barttery")!)
+                } label: {
+                    Text("Barttery")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
                 Spacer()
                 Button {
                     monitor.refresh()

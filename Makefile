@@ -1,4 +1,6 @@
 APP        = Barttery
+BRIDGE_INC = /opt/homebrew/include
+BUNDLED_LIB_DIR = Sources/Resources/lib
 BUNDLE     = Barttery.app
 CONTENTS   = $(BUNDLE)/Contents
 BIN_DIR    = .build/release
@@ -14,11 +16,11 @@ build:
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
 	@cp Info.plist $(CONTENTS)/
 	@cp AppIcon.icns $(CONTENTS)/Resources/
-	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest $(CONTENTS)/Resources/
+	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat $(CONTENTS)/Resources/
 	@cp Sources/Resources/lib/*.dylib $(CONTENTS)/Resources/
 	@cp Sources/Resources/reload.svg $(CONTENTS)/Resources/
-	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest
-	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest; do \
+	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat
+	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" "$$f"; \
 	done; \
 	codesign --force --sign "$(SIGN)" --entitlements Barttery.entitlements $(BUNDLE)
@@ -43,5 +45,16 @@ dmg: build
 	rm -rf "$$STAGING"; \
 	echo "=> $$DMG"
 
+bartbeat:
+	clang -o Sources/Resources/bartbeat bridge/bartbeat.c \
+		-I$(BRIDGE_INC) \
+		-L$(BUNDLED_LIB_DIR) \
+		-limobiledevice-1.0.6 \
+		-lusbmuxd-2.0.6 \
+		-lplist-2.0.4 \
+		-limobiledevice-glue-1.0.0 \
+		-arch arm64
+	@echo "=> Built bartbeat"
+
 clean:
-	rm -rf .build $(BUNDLE)
+	rm -rf .build $(BUNDLE) Sources/Resources/bartbeat

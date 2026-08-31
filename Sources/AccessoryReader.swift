@@ -6,6 +6,7 @@ struct AccessoryBattery {
     let name: String
     let level: Int
     let charging: Bool
+    var isApple: Bool = false
 
     private var isKeyboard: Bool {
         let lower = name.lowercased()
@@ -17,8 +18,7 @@ struct AccessoryBattery {
         let lower = name.lowercased()
         if isKeyboard                 { return "keyboard" }
         if lower.contains("trackpad") { return "trackpad" }
-        if lower.contains("magic")    { return "magicmouse" }
-        return "computermouse"
+        return isApple ? "magicmouse" : "computermouse"
     }
 
     var iconChar: String? {
@@ -140,7 +140,7 @@ class AccessoryReader: NSObject {
                 let displayName = btNames[devAddr] ?? product
                 let flags = props["BatteryStatusFlags"] as? Int ?? 0
                 let charging = (flags & 2) != 0
-                seen[product] = AccessoryBattery(name: displayName, level: battery, charging: charging)
+                seen[product] = AccessoryBattery(name: displayName, level: battery, charging: charging, isApple: true)
                 if !addr.isEmpty && devAddr == addr { found = true }
             }
         }

@@ -13,7 +13,7 @@ class DeviceBatteryMonitor: ObservableObject {
     @Published var watchBattery:  WatchBattery? = {
         let ud = UserDefaults.standard
         guard let t = ud.object(forKey: "watch.lastSyncTime") as? Date,
-              Date().timeIntervalSince(t) < 1800 else { return nil }
+              Date().timeIntervalSince(t) < 1200 else { return nil }
         guard let level = ud.object(forKey: "watch.lastLevel") as? Int, level >= 0 else { return nil }
         return WatchBattery(
             name:        ud.string(forKey: "watch.lastName") ?? "Apple Watch",
@@ -27,7 +27,7 @@ class DeviceBatteryMonitor: ObservableObject {
         var times: [String: Date] = [:]
         for key in ["phone", "pad", "watch"] {
             if let t = ud.object(forKey: "\(key).lastSyncTime") as? Date,
-               Date().timeIntervalSince(t) < 1800 {
+               Date().timeIntervalSince(t) < 1200 {
                 times[key] = t
             }
         }
@@ -278,14 +278,14 @@ class DeviceBatteryMonitor: ObservableObject {
 private func cachedBattery(_ device: String) -> Int? {
     let ud = UserDefaults.standard
     guard let t = ud.object(forKey: "\(device).lastSyncTime") as? Date,
-          Date().timeIntervalSince(t) < 1800 else { return nil }
+          Date().timeIntervalSince(t) < 1200 else { return nil }
     return ud.object(forKey: "\(device).lastBattery") as? Int
 }
 
 private func cachedAccessories() -> [AccessoryBattery] {
     let ud = UserDefaults.standard
     guard let t = ud.object(forKey: "accessories.lastSyncTime") as? Date,
-          Date().timeIntervalSince(t) < 1800,
+          Date().timeIntervalSince(t) < 1200,
           let cached = ud.array(forKey: "accessories.last") as? [[String: Any]]
     else { return [] }
 
