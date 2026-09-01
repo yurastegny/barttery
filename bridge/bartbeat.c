@@ -305,6 +305,8 @@ typedef struct {
     volatile int     in_use;
     volatile time_t  lastOk;   /* unix time of last successful battery read */
     pthread_t        thread;
+    pthread_t        hb_thread;
+    volatile int     hb_started;
 } Dev;
 
 static Dev              devs[MAX_DEVS];
@@ -352,13 +354,14 @@ static void *dev_run(void *p) {
         dbg("device: %s (%s)", sn, type);
     }
 
-    /* heartbeat manager — self-restarting thread, independent of battery poll */
+    /* heartbeat manager — self-restarting thread, independent of battery poll.
+     * Stored in dev->hb_thread so it can be cancelled when dev_run exits. */
     {
         HBManagerArg *a = malloc(sizeof *a);
         a->device = device;  a->alive = &dev->alive;
-        pthread_t t;
-        pthread_create(&t, NULL, hb_manager_run, a);
-        pthread_detach(t);
+        pthread_create(&dev->hb_thread, NULL, hb_manager_run, a);
+        pthread_detach(dev->hb_thread);
+        dev->hb_started = 1;
     }
 
     /* initial battery read */
@@ -405,6 +408,12 @@ static void *dev_run(void *p) {
     }
 
 out:
+    /* Cancel heartbeat before freeing device so it can't use a dangling pointer. */
+    dev->alive = 0;
+    if (dev->hb_started) {
+        pthread_cancel(dev->hb_thread);
+        dev->hb_started = 0;
+    }
     if (ld_bat) lockdownd_client_free(ld_bat);
     if (device)  idevice_free(device);
 
@@ -476,8 +485,12 @@ static void *scan_run(void *p) {
             if (now - devs[i].lastOk > 120) {
                 dbg("watchdog: cancelling stuck thread for %s (%lds stale)",
                     devs[i].udid, (long)(now - devs[i].lastOk));
+                devs[i].alive = 0;
+                if (devs[i].hb_started) {
+                    pthread_cancel(devs[i].hb_thread);
+                    devs[i].hb_started = 0;
+                }
                 pthread_cancel(devs[i].thread);
-                devs[i].alive  = 0;
                 devs[i].in_use = 0;
             }
         }
