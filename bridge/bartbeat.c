@@ -300,9 +300,11 @@ static void *hb_manager_run(void *p) {
 /* ── device slots ────────────────────────────────────────────────────────── */
 
 typedef struct {
-    char         udid[256];
-    volatile int alive;
-    volatile int in_use;
+    char             udid[256];
+    volatile int     alive;
+    volatile int     in_use;
+    volatile time_t  lastOk;   /* unix time of last successful battery read */
+    pthread_t        thread;
 } Dev;
 
 static Dev              devs[MAX_DEVS];
@@ -387,6 +389,7 @@ static void *dev_run(void *p) {
         int lvl = get_battery(ld_bat, &chg);
         if (lvl >= 0) {
             fails = 0;
+            dev->lastOk = time(NULL);
             snprintf(buf, sizeof buf,
                 "{\"type\":\"%s\",\"udid\":\"%s\",\"name\":\"%s\",\"level\":%d,\"charging\":%s}",
                 type, su, sn, lvl, chg ? "true" : "false");
@@ -427,9 +430,8 @@ static void connect_udid(const char *udid) {
             memset(&devs[i], 0, sizeof devs[i]);
             strncpy(devs[i].udid, udid, sizeof(devs[i].udid) - 1);
             devs[i].alive = devs[i].in_use = 1;
-            pthread_t t;
-            pthread_create(&t, NULL, dev_run, &devs[i]);
-            pthread_detach(t);
+            pthread_create(&devs[i].thread, NULL, dev_run, &devs[i]);
+            pthread_detach(devs[i].thread);
             break;
         }
     }
@@ -465,6 +467,21 @@ static void *scan_run(void *p) {
     while (!g_stop) {
         for (int i = 0; i < POLL_S && !g_stop; i++) sleep(1);
         if (g_stop) break;
+
+        /* watchdog: cancel threads stuck >2 min without a successful battery read */
+        time_t now = time(NULL);
+        pthread_mutex_lock(&devs_lock);
+        for (int i = 0; i < MAX_DEVS; i++) {
+            if (!devs[i].in_use || devs[i].lastOk == 0) continue;
+            if (now - devs[i].lastOk > 120) {
+                dbg("watchdog: cancelling stuck thread for %s (%lds stale)",
+                    devs[i].udid, (long)(now - devs[i].lastOk));
+                pthread_cancel(devs[i].thread);
+                devs[i].alive  = 0;
+                devs[i].in_use = 0;
+            }
+        }
+        pthread_mutex_unlock(&devs_lock);
 
         usbmuxd_device_info_t *list = NULL;
         int n = usbmuxd_get_device_list(&list);
