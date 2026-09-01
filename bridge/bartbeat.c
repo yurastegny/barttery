@@ -303,7 +303,8 @@ typedef struct {
     char             udid[256];
     volatile int     alive;
     volatile int     in_use;
-    volatile time_t  lastOk;   /* unix time of last successful battery read */
+    volatile time_t  startTime; /* unix time when thread was created */
+    volatile time_t  lastOk;    /* unix time of last successful battery read */
     pthread_t        thread;
     pthread_t        hb_thread;
     volatile int     hb_started;
@@ -438,7 +439,8 @@ static void connect_udid(const char *udid) {
         if (!devs[i].in_use) {
             memset(&devs[i], 0, sizeof devs[i]);
             strncpy(devs[i].udid, udid, sizeof(devs[i].udid) - 1);
-            devs[i].alive = devs[i].in_use = 1;
+            devs[i].alive     = devs[i].in_use = 1;
+            devs[i].startTime = time(NULL);
             pthread_create(&devs[i].thread, NULL, dev_run, &devs[i]);
             pthread_detach(devs[i].thread);
             break;
@@ -477,22 +479,24 @@ static void *scan_run(void *p) {
         for (int i = 0; i < POLL_S && !g_stop; i++) sleep(1);
         if (g_stop) break;
 
-        /* watchdog: cancel threads stuck >2 min without a successful battery read */
+        /* watchdog: cancel threads stuck >2 min.
+         * Use lastOk if battery was ever read, otherwise fall back to startTime
+         * (catches threads stuck in initial lockdownd handshake). */
         time_t now = time(NULL);
         pthread_mutex_lock(&devs_lock);
         for (int i = 0; i < MAX_DEVS; i++) {
-            if (!devs[i].in_use || devs[i].lastOk == 0) continue;
-            if (now - devs[i].lastOk > 120) {
-                dbg("watchdog: cancelling stuck thread for %s (%lds stale)",
-                    devs[i].udid, (long)(now - devs[i].lastOk));
-                devs[i].alive = 0;
-                if (devs[i].hb_started) {
-                    pthread_cancel(devs[i].hb_thread);
-                    devs[i].hb_started = 0;
-                }
-                pthread_cancel(devs[i].thread);
-                devs[i].in_use = 0;
+            if (!devs[i].in_use) continue;
+            time_t ref = devs[i].lastOk > 0 ? devs[i].lastOk : devs[i].startTime;
+            if (ref == 0 || now - ref <= 120) continue;
+            dbg("watchdog: cancelling stuck thread for %s (%lds, lastOk=%d)",
+                devs[i].udid, (long)(now - ref), devs[i].lastOk > 0);
+            devs[i].alive = 0;
+            if (devs[i].hb_started) {
+                pthread_cancel(devs[i].hb_thread);
+                devs[i].hb_started = 0;
             }
+            pthread_cancel(devs[i].thread);
+            devs[i].in_use = 0;
         }
         pthread_mutex_unlock(&devs_lock);
 

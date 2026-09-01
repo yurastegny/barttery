@@ -21,7 +21,9 @@ class IDeviceReader: NSObject {
     private var lastPhoneSuccess: Date?
     private var lastPadSuccess:   Date?
     private var lastWatchSuccess: Date?
-    private var phoneUDID: String?  // used to trigger comptest for Watch
+    private var phoneUDID: String?
+    private var lastBartbeatOutput: Date?
+    private var lastBartbeatRestart: Date?
 
     func start() {
         guard let resURL = Bundle.main.resourceURL else { return }
@@ -46,11 +48,8 @@ class IDeviceReader: NSObject {
     }
 
     @objc private func onWake() {
-        bartbeat?.terminate()
-        bartbeat = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.launchBartbeat()
-        }
+        lastBartbeatRestart = nil  // bypass cooldown on wake
+        restartBartbeat()
     }
 
     // Triggers an immediate Watch battery check (phone battery comes from bartbeat internally).
@@ -64,6 +63,7 @@ class IDeviceReader: NSObject {
     // MARK: - bartbeat process
 
     private func launchBartbeat() {
+        if let proc = bartbeat, proc.isRunning { return }
         let path = (binDir as NSString).appendingPathComponent("bartbeat")
         guard FileManager.default.fileExists(atPath: path) else { return }
 
@@ -102,6 +102,7 @@ class IDeviceReader: NSObject {
     }
 
     private func handle(line: String) {
+        lastBartbeatOutput = Date()
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
@@ -195,8 +196,27 @@ class IDeviceReader: NSObject {
 
     // MARK: - Stale timeouts
 
+    private func restartBartbeat() {
+        let cooldown: TimeInterval = 180
+        if let last = lastBartbeatRestart, Date().timeIntervalSince(last) < cooldown { return }
+        lastBartbeatRestart = Date()
+        lastBartbeatOutput  = Date()  // reset so we don't loop immediately
+        bartbeat?.terminate()
+        bartbeat = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.launchBartbeat()
+        }
+    }
+
     private func checkStale() {
         let now = Date()
+
+        // Restart bartbeat if it's been silent for 3 min while a device was previously active
+        let hadDevice = lastPhoneSuccess != nil || lastPadSuccess != nil
+        if hadDevice, let out = lastBartbeatOutput, now.timeIntervalSince(out) > 180 {
+            restartBartbeat()
+            return
+        }
 
         // Watch: hide after 60 minutes without a successful comptest query
         if let t = lastWatchSuccess, now.timeIntervalSince(t) > 3600 {
