@@ -1,4 +1,6 @@
 .build/
+.swiftpm/
+*.xcodeproj/
 Barttery.app/
 *.dmg
 AppIcon.icns
