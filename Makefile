@@ -18,7 +18,6 @@ build:
 	@cp AppIcon.icns $(CONTENTS)/Resources/
 	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat $(CONTENTS)/Resources/
 	@cp Sources/Resources/lib/*.dylib $(CONTENTS)/Resources/
-	@cp Sources/Resources/reload.svg $(CONTENTS)/Resources/
 	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat
 	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" "$$f"; \
