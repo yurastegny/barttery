@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 struct WatchBattery {
     let name: String
@@ -35,6 +36,20 @@ class IDeviceReader: NSObject {
         }
         staleTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.checkStale()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(onWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func onWake() {
+        bartbeat?.terminate()
+        bartbeat = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.launchBartbeat()
         }
     }
 
