@@ -56,5 +56,13 @@ After this, the app will be added to the exceptions list and will launch normall
 
 ## License
 
-Barttery is licensed under the **GPL-2.0-or-later** license, inherited from the bundled [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) tools (`ideviceinfo`, `idevice_id`) which are GPL-2.0+.
+Barttery is licensed under the **GPL-2.0-or-later** license. The following third-party components are bundled:
+
+| Component | License |
+|---|---|
+| [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) (`ideviceinfo`, `idevice_id`, `comptest`, `bartbeat`) | GPL-2.0+ |
+| [libimobiledevice-glue](https://github.com/libimobiledevice/libimobiledevice-glue) | LGPL-2.1+ |
+| [libplist](https://github.com/libimobiledevice/libplist) | LGPL-2.1+ |
+| [libusbmuxd](https://github.com/libimobiledevice/libusbmuxd) | LGPL-2.1+ |
+| [OpenSSL 3](https://github.com/openssl/openssl) (`libssl`, `libcrypto`) | Apache-2.0 |
 
