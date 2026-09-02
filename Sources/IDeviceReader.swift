@@ -218,14 +218,14 @@ class IDeviceReader: NSObject {
             return
         }
 
-        // Watch: hide after 60 minutes without a successful comptest query
-        if let t = lastWatchSuccess, now.timeIntervalSince(t) > 3600 {
+        // Watch: hide after 30 minutes without a successful query
+        if let t = lastWatchSuccess, now.timeIntervalSince(t) > 1800 {
             lastWatchSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(nil) }
         }
 
-        // iPhone / iPad: hide after 24 hours
-        let deviceTimeout: TimeInterval = 86400
+        // iPhone / iPad: hide after 30 minutes
+        let deviceTimeout: TimeInterval = 1800
         if let t = lastPhoneSuccess, now.timeIntervalSince(t) > deviceTimeout {
             lastPhoneSuccess = nil
             phoneUDID = nil

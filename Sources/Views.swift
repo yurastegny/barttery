@@ -411,7 +411,7 @@ struct NotificationThresholdRow: View {
                             .foregroundColor(.secondary)
                     }
                 } else if let date = monitor.syncTimes[device.rawValue] {
-                    Text(date, style: .relative)
+                    Text(syncElapsed(date))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -472,7 +472,13 @@ struct ThresholdButtonStyle: ButtonStyle {
 
 // MARK: - Helpers
 
+private func syncElapsed(_ date: Date) -> String {
+    let mins = max(1, Int(Date().timeIntervalSince(date) / 60))
+    return "\(mins) min ago"
+}
+
 private func formatMinutes(_ minutes: Int) -> String {
+    if minutes <= 1 { return "1 min" }
     let h = minutes / 60
     let m = minutes % 60
     return h > 0 ? "\(h):\(String(format: "%02d", m))" : "0:\(String(format: "%02d", m))"

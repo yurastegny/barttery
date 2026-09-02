@@ -48,16 +48,11 @@ class MacBatteryReader {
               let props = propsRef?.takeRetainedValue() as? [String: Any]
         else { return nil }
 
-        // Use the system-computed percentage from IOPowerSources — the same value
-        // the macOS menu bar shows. Raw capacity math diverges by 1-2% because
-        // Apple applies temperature compensation and charge hysteresis on top.
-        guard let psBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let psList = IOPSCopyPowerSourcesList(psBlob)?.takeRetainedValue() as? [CFTypeRef],
-              let psSource = psList.first,
-              let psDesc = IOPSGetPowerSourceDescription(psBlob, psSource)
-                               .takeUnretainedValue() as? [String: Any],
-              let level = psDesc[kIOPSCurrentCapacityKey] as? Int
-        else { return nil }
+        let current = props["AppleRawCurrentCapacity"] as? Int ?? 0
+        let max     = props["AppleRawMaxCapacity"]     as? Int ?? 0
+        guard max > 0 else { return nil }
+
+        let level = Int((Double(current) / Double(max) * 100).rounded())
         let isCharging  = props["IsCharging"]         as? Bool ?? false
         let acConnected = props["ExternalConnected"]  as? Bool ?? false
 
@@ -65,8 +60,8 @@ class MacBatteryReader {
         let cycleCount = props["CycleCount"] as? Int ?? 0
 
         func validMinutes(_ key: String) -> Int? {
-            guard let v = props[key] as? Int, v > 0, v < 65535 else { return nil }
-            return v
+            guard let v = props[key] as? Int, v >= 0, v < 65535 else { return nil }
+            return Swift.max(v, 1)
         }
 
         var minutesToFull: Int? = nil
