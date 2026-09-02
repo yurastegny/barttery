@@ -39,12 +39,13 @@ class DeviceBatteryMonitor: ObservableObject {
     @Published var airPodsName:      String = "AirPods"
     @Published var accessories:      [AccessoryBattery] = cachedAccessories()
 
-    private var macReader:       MacBatteryReader?
-    private var ideviceReader:   IDeviceReader?
-    private var airPodsReader:   AirPodsReader?
-    private var accessoryReader: AccessoryReader?
-    private var bleReader:       BLEDeviceReader?
-    private var logiReader:      LogitechReader?
+    private var macReader:          MacBatteryReader?
+    private var ideviceReader:      IDeviceReader?
+    private var airPodsReader:      AirPodsReader?
+    private var accessoryReader:    AccessoryReader?
+    private var bleReader:          BLEDeviceReader?
+    private var logiReader:         LogitechReader?
+    private var btHeadphonesReader: BTHeadphonesReader?
     private var refreshTimer:    Timer?
     private var retryTimer:      Timer?
 
@@ -52,6 +53,7 @@ class DeviceBatteryMonitor: ObservableObject {
     private var appleAccessories: [AccessoryBattery] = []
     private var logiAccessories:  [AccessoryBattery] = []
     private var bleAccessories:   [AccessoryBattery] = []
+    private var btHeadphones:     [AccessoryBattery] = []
     // Names of devices currently visible via IOKit HID++, updated at the start of each refresh.
     // Blocks BLE from racing in while battery queries are still running.
     private var claimedByLogi:    Set<String>        = []
@@ -63,6 +65,7 @@ class DeviceBatteryMonitor: ObservableObject {
         setupAccessories()
         setupBLEDevices()
         setupLogitech()
+        setupBTHeadphones()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -73,6 +76,7 @@ class DeviceBatteryMonitor: ObservableObject {
         accessoryReader?.readOnce()
         bleReader?.refresh()
         logiReader?.refresh()
+        btHeadphonesReader?.readOnce()
     }
 
     func onPopupOpen() {
@@ -250,10 +254,21 @@ class DeviceBatteryMonitor: ObservableObject {
         logiReader = reader
     }
 
+    private func setupBTHeadphones() {
+        let reader = BTHeadphonesReader()
+        reader.onUpdate = { [weak self] items in
+            guard let self else { return }
+            btHeadphones = items
+            mergeAccessories()
+        }
+        reader.startMonitoring()
+        btHeadphonesReader = reader
+    }
+
     private func mergeAccessories() {
         let appleNames = Set(appleAccessories.map { $0.name })
         let logiNames  = Set(logiAccessories.map { $0.name })
-        // Exclude BLE entries for phones/pads already shown in dedicated rows.
+        let bleNames   = Set(bleAccessories.map { $0.name })
         let ownedNames = Set([phoneName, padName].filter { !$0.isEmpty })
         let logiOnly   = logiAccessories.filter { !appleNames.contains($0.name) }
         let bleOnly    = bleAccessories.filter {
@@ -261,7 +276,13 @@ class DeviceBatteryMonitor: ObservableObject {
             !logiNames.contains($0.name) &&
             !ownedNames.contains($0.name)
         }
-        accessories = (appleAccessories + logiOnly + bleOnly).sorted { $0.name < $1.name }
+        let btOnly = btHeadphones.filter {
+            !appleNames.contains($0.name) &&
+            !logiNames.contains($0.name) &&
+            !bleNames.contains($0.name) &&
+            !ownedNames.contains($0.name)
+        }
+        accessories = (appleAccessories + logiOnly + bleOnly + btOnly).sorted { $0.name < $1.name }
     }
 
     // MARK: - Icon

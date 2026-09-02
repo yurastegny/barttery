@@ -2,18 +2,19 @@ import UserNotifications
 import AppKit
 
 enum BatteryDevice: String, CaseIterable {
-    case mac, phone, pad, watch, airPods, keyboard, mouse, trackpad
+    case mac, phone, pad, watch, airPods, keyboard, mouse, trackpad, headphones
 
     var label: String {
         switch self {
-        case .mac:      return "MacBook"
-        case .phone:    return "iPhone"
-        case .pad:      return "iPad"
-        case .watch:    return "Apple Watch"
-        case .airPods:  return "AirPods"
-        case .keyboard: return "Keyboard"
-        case .mouse:    return "Mouse"
-        case .trackpad: return "Trackpad"
+        case .mac:        return "MacBook"
+        case .phone:      return "iPhone"
+        case .pad:        return "iPad"
+        case .watch:      return "Apple Watch"
+        case .airPods:    return "AirPods"
+        case .keyboard:   return "Keyboard"
+        case .mouse:      return "Mouse"
+        case .trackpad:   return "Trackpad"
+        case .headphones: return "Headphones"
         }
     }
 }

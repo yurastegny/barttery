@@ -14,8 +14,14 @@ struct AccessoryBattery {
             || lower.contains("k780") || lower.contains("k800") || lower.contains("k850")
     }
 
+    private var isHeadphones: Bool {
+        let lower = name.lowercased()
+        return lower.contains("bud") || lower.contains("headphone") || lower.contains("earphone")
+    }
+
     var icon: String {
         let lower = name.lowercased()
+        if isHeadphones               { return "headphones" }
         if isKeyboard                 { return "keyboard" }
         if lower.contains("trackpad") { return "trackpad" }
         return isApple ? "magicmouse" : "computermouse"
@@ -27,6 +33,7 @@ struct AccessoryBattery {
 
     var batteryDevice: BatteryDevice {
         let lower = name.lowercased()
+        if isHeadphones               { return .headphones }
         if isKeyboard                 { return .keyboard }
         if lower.contains("trackpad") { return .trackpad }
         return .mouse

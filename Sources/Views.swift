@@ -417,7 +417,7 @@ struct NotificationThresholdRow: View {
                 }
             }
             HStack(spacing: 6) {
-                ForEach(device == .airPods ? [20] : [20, 80, 100], id: \.self) { threshold in
+                ForEach((device == .airPods || device == .headphones) ? [20] : [20, 80, 100], id: \.self) { threshold in
                     ThresholdToggleButton(
                         label: threshold == 20 ? "↓20%" : threshold == 80 ? "↑80%" : "100%",
                         enabled: settings.isThresholdEnabled(device: device, threshold: threshold)
