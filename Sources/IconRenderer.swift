@@ -41,22 +41,11 @@ func renderBatteryIcon(level: Int, state: ChargeState) -> NSImage {
                        cornerWidth: radius, cornerHeight: radius, transform: nil))
     ctx.fillPath()
 
-    // Nub — left side sharp, right side: single bezier apex at vertical center
-    let nx   = bodyW + nubGap
-    let ny   = (bodyH - nubH) / 2
-    let apex = CGPoint(x: nx + nubW, y: ny + nubH / 2)
-    let k: CGFloat = 0.55  // bezier circle approximation
-    let nubPath = CGMutablePath()
-    nubPath.move(to: CGPoint(x: nx, y: ny))
-    nubPath.addLine(to: CGPoint(x: nx, y: ny + nubH))
-    nubPath.addCurve(to: apex,
-                     control1: CGPoint(x: nx + nubW * k, y: ny + nubH),
-                     control2: CGPoint(x: apex.x, y: apex.y + nubH / 2 * k))
-    nubPath.addCurve(to: CGPoint(x: nx, y: ny),
-                     control1: CGPoint(x: apex.x, y: apex.y - nubH / 2 * k),
-                     control2: CGPoint(x: nx + nubW * k, y: ny))
-    nubPath.closeSubpath()
-    ctx.addPath(nubPath)
+    // Nub — all corners rounded 2 pt
+    let nx = bodyW + nubGap
+    let ny = (bodyH - nubH) / 2
+    ctx.addPath(CGPath(roundedRect: CGRect(x: nx, y: ny, width: nubW, height: nubH),
+                       cornerWidth: 2, cornerHeight: 2, transform: nil))
     ctx.fillPath()
 
     // Switch to destinationOut to punch out the content
