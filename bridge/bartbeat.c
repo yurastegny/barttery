@@ -109,9 +109,11 @@ static int get_battery(lockdownd_client_t ld, int *chg) {
     return lvl;
 }
 
-/* ── Watch battery via companion_proxy (reuses ld_bat session) ───────────── */
+/* ── Watch battery via companion_proxy ───────────────────────────────────── */
 
-/* Open a companion_proxy client via the existing lockdownd session. */
+/* Start companion_proxy service using the given lockdownd session.
+ * The caller owns ld — it is NOT freed here. Never pass ld_bat: calling
+ * lockdownd_start_service on ld_bat corrupts the battery session. */
 static int cp_open(idevice_t device, lockdownd_client_t ld,
                    companion_proxy_client_t *out) {
     lockdownd_service_descriptor_t svc = NULL;
@@ -122,8 +124,9 @@ static int cp_open(idevice_t device, lockdownd_client_t ld,
     return (err == COMPANION_PROXY_E_SUCCESS) ? 0 : -1;
 }
 
-/* Get one value from the companion registry. Each call needs a fresh client
- * because the device closes the connection after replying. */
+/* Get one value from the companion registry. Each call needs a fresh cp client
+ * because the device closes the connection after replying. Shares ld_cp so only
+ * one lockdownd handshake is needed for the entire query_watch call. */
 static plist_t cp_get(idevice_t device, lockdownd_client_t ld,
                       const char *watch_udid, const char *key) {
     companion_proxy_client_t cp = NULL;
@@ -134,13 +137,8 @@ static plist_t cp_get(idevice_t device, lockdownd_client_t ld,
     plist_t val = NULL;
     companion_proxy_error_t err = companion_proxy_get_value_from_registry(cp, watch_udid, key, &val);
     companion_proxy_client_free(cp);
-    if (err != COMPANION_PROXY_E_SUCCESS) {
+    if (err != COMPANION_PROXY_E_SUCCESS)
         dbg("cp_get(%s): error %d", key, (int)err);
-    } else if (val) {
-        /* debug only */
-    } else {
-        dbg("cp_get(%s): success but val=NULL", key);
-    }
     return val;
 }
 
@@ -167,13 +165,23 @@ static int plist_int_val(plist_t v) {
 /*
  * Queries Apple Watch battery via companion_proxy and emits
  * {"type":"watch",...} to stdout if data is available.
- * Uses ld_bat so no new lockdownd session is opened.
+ * Creates ONE lockdownd session (ld_cp) shared across all companion_proxy
+ * operations so only one SSL handshake is needed per query cycle.
+ * Uses the existing idevice_t — never opens a second connection to the device.
  */
-static void query_watch(idevice_t device, lockdownd_client_t ld_bat) {
+static void query_watch(idevice_t device) {
+    /* One lockdownd session for all companion_proxy calls in this cycle */
+    lockdownd_client_t ld_cp = NULL;
+    if (lockdownd_client_new_with_handshake(device, &ld_cp, "bartbeat-cp") != LOCKDOWN_E_SUCCESS) {
+        dbg("companion_proxy: lockdown handshake failed");
+        return;
+    }
+
     /* 1. Get paired Watch UDIDs */
     companion_proxy_client_t cp = NULL;
-    if (cp_open(device, ld_bat, &cp) != 0) {
+    if (cp_open(device, ld_cp, &cp) != 0) {
         dbg("companion_proxy open failed");
+        lockdownd_client_free(ld_cp);
         return;
     }
     plist_t registry = NULL;
@@ -183,6 +191,7 @@ static void query_watch(idevice_t device, lockdownd_client_t ld_bat) {
     if (reg_err != COMPANION_PROXY_E_SUCCESS || !registry) {
         dbg("companion get_device_registry error %d", (int)reg_err);
         plist_free(registry);
+        lockdownd_client_free(ld_cp);
         return;
     }
 
@@ -200,13 +209,20 @@ static void query_watch(idevice_t device, lockdownd_client_t ld_bat) {
     }
     plist_free(registry);
 
-    if (!watch_udid) { dbg("no watch UDID in registry"); return; }
+    if (!watch_udid) {
+        dbg("no watch UDID in registry");
+        lockdownd_client_free(ld_cp);
+        return;
+    }
     dbg("watch UDID: %s", watch_udid);
 
-    /* 2. Query individual values — each call needs a fresh cp client */
-    plist_t lv_raw = cp_get(device, ld_bat, watch_udid, "BatteryCurrentCapacity");
-    plist_t cv_raw = cp_get(device, ld_bat, watch_udid, "BatteryIsCharging");
-    plist_t nv_raw = cp_get(device, ld_bat, watch_udid, "DeviceName");
+    /* 2. Query individual values — each call needs a fresh cp client but
+     * shares ld_cp, so lockdownd_start_service is called on the same session */
+    plist_t lv_raw = cp_get(device, ld_cp, watch_udid, "BatteryCurrentCapacity");
+    plist_t cv_raw = cp_get(device, ld_cp, watch_udid, "BatteryIsCharging");
+    plist_t nv_raw = cp_get(device, ld_cp, watch_udid, "DeviceName");
+
+    lockdownd_client_free(ld_cp);
 
     /* companion_proxy returns {"Key": value} — extract the inner node */
     plist_t lv = lv_raw ? plist_dict_get_item(lv_raw, "BatteryCurrentCapacity") : NULL;
@@ -265,9 +281,14 @@ static void hb_run_once(idevice_t device, volatile int *alive) {
         heartbeat_client_new(device, hb_svc, &hb);
         lockdownd_service_descriptor_free(hb_svc);
     }
-    lockdownd_client_free(ld_hb);
-
-    if (!hb) { dbg("heartbeat_client_new failed"); return; }
+    /* Keep ld_hb alive while heartbeat runs: iOS ties the heartbeat service
+     * lifetime to its lockdownd session — freeing ld_hb early causes an
+     * immediate HEARTBEAT_E_MUX_ERROR on the first receive. */
+    if (!hb) {
+        dbg("heartbeat_client_new failed");
+        lockdownd_client_free(ld_hb);
+        return;
+    }
 
     plist_t polo = plist_new_dict();
     plist_dict_set_item(polo, "Command", plist_new_string("Polo"));
@@ -284,6 +305,7 @@ static void hb_run_once(idevice_t device, volatile int *alive) {
     }
     plist_free(polo);
     heartbeat_client_free(hb);
+    lockdownd_client_free(ld_hb);
 }
 
 static void *hb_manager_run(void *p) {
@@ -303,15 +325,33 @@ typedef struct {
     char             udid[256];
     volatile int     alive;
     volatile int     in_use;
-    volatile time_t  startTime; /* unix time when thread was created */
-    volatile time_t  lastOk;    /* unix time of last successful battery read */
+    volatile time_t  startTime;  /* unix time when thread was created */
+    volatile time_t  lastOk;     /* unix time of last successful battery read */
     pthread_t        thread;
     pthread_t        hb_thread;
     volatile int     hb_started;
+    pthread_t        watch_thread;
+    volatile int     watch_started;
 } Dev;
 
 static Dev              devs[MAX_DEVS];
 static pthread_mutex_t  devs_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* ── Watch query thread — runs independently of the battery poll loop ────── */
+
+typedef struct { idevice_t device; volatile int *alive; } WatchRunArg;
+
+static void *watch_run(void *p) {
+    WatchRunArg *a = p;
+    /* stagger first query so battery session is established first */
+    for (int i = 0; i < POLL_S && *a->alive; i++) sleep(1);
+    while (*a->alive) {
+        query_watch(a->device);
+        for (int i = 0; i < POLL_S && *a->alive; i++) sleep(1);
+    }
+    free(a);
+    return NULL;
+}
 
 /* ── device thread ───────────────────────────────────────────────────────── */
 
@@ -365,6 +405,17 @@ static void *dev_run(void *p) {
         dev->hb_started = 1;
     }
 
+    /* Watch query thread — only for iPhones (Watch pairs to phone, not iPad).
+     * Shares the existing idevice_t so no second connection is opened.
+     * Uses its own lockdownd session so ld_bat is never touched by cp_open. */
+    if (strcmp(type, "phone") == 0) {
+        WatchRunArg *a = malloc(sizeof *a);
+        a->device = device;  a->alive = &dev->alive;
+        pthread_create(&dev->watch_thread, NULL, watch_run, a);
+        pthread_detach(dev->watch_thread);
+        dev->watch_started = 1;
+    }
+
     /* initial battery read */
     {
         int chg = 0;
@@ -398,9 +449,6 @@ static void *dev_run(void *p) {
                 "{\"type\":\"%s\",\"udid\":\"%s\",\"name\":\"%s\",\"level\":%d,\"charging\":%s}",
                 type, su, sn, lvl, chg ? "true" : "false");
             emit(buf);
-            /* query Watch only from iPhone (Watch pairs to phone, not iPad) */
-            if (strcmp(type, "phone") == 0)
-                query_watch(device, ld_bat);
         } else {
             dbg("battery fail %d/3", ++fails);
             if (fails >= 3) break;   /* force reconnect */
@@ -409,8 +457,12 @@ static void *dev_run(void *p) {
     }
 
 out:
-    /* Cancel heartbeat before freeing device so it can't use a dangling pointer. */
+    /* Cancel watch and heartbeat threads before freeing device. */
     dev->alive = 0;
+    if (dev->watch_started) {
+        pthread_cancel(dev->watch_thread);
+        dev->watch_started = 0;
+    }
     if (dev->hb_started) {
         pthread_cancel(dev->hb_thread);
         dev->hb_started = 0;
@@ -491,6 +543,10 @@ static void *scan_run(void *p) {
             dbg("watchdog: cancelling stuck thread for %s (%lds, lastOk=%d)",
                 devs[i].udid, (long)(now - ref), devs[i].lastOk > 0);
             devs[i].alive = 0;
+            if (devs[i].watch_started) {
+                pthread_cancel(devs[i].watch_thread);
+                devs[i].watch_started = 0;
+            }
             if (devs[i].hb_started) {
                 pthread_cancel(devs[i].hb_thread);
                 devs[i].hb_started = 0;

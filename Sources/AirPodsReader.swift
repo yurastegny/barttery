@@ -194,7 +194,11 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
     private func resetHideTimer() {
         hideTimer?.invalidate()
         hideTimer = Timer.scheduledTimer(withTimeInterval: Self.hideTimeout, repeats: false) { [weak self] _ in
-            self?.onUpdate?(nil)
+            guard let self else { return }
+            // AirPods reduce BLE advertisement rate during active audio — keep showing
+            // last known levels as long as IOBluetooth still reports them connected.
+            // The disconnect notification handles actual removal.
+            if !self.isConnected { self.onUpdate?(nil) }
         }
     }
 

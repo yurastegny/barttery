@@ -255,7 +255,7 @@ struct AirPodsRow: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            if let level = podsLevel {
+            if let barLevel = podsBarLevel {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("􀪷")
@@ -271,10 +271,10 @@ struct AirPodsRow: View {
                                     Image(systemName: "bolt.fill")
                                         .font(.system(size: 12, weight: .medium))
                                         .opacity(battery.leftCharging || battery.rightCharging ? 1 : 0)
-                                    Text("\(level)%").font(.system(size: 17, weight: .regular))
+                                    Text(podsLevelText).font(.system(size: 17, weight: .regular))
                                 }
                             }
-                            BatteryBar(level: level).frame(height: 1)
+                            BatteryBar(level: barLevel).frame(height: 1)
                         }
                     }
                     .contentShape(Rectangle())
@@ -318,8 +318,17 @@ struct AirPodsRow: View {
 
     private var isPro: Bool { name.lowercased().contains("pro") }
 
-    private var podsLevel: Int? {
+    private var podsBarLevel: Int? {
         [battery.left, battery.right].compactMap { $0 }.min()
+    }
+
+    private var podsLevelText: String {
+        switch (battery.left, battery.right) {
+        case (let l?, let r?) where l != r: return "L\(l)%  R\(r)%"
+        case (let l?, _):                   return "\(l)%"
+        case (_, let r?):                   return "\(r)%"
+        default:                            return ""
+        }
     }
 }
 
