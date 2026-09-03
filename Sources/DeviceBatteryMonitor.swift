@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import IOBluetooth
 
 class DeviceBatteryMonitor: ObservableObject {
     @Published var macBattery:    MacBattery?  = nil
@@ -223,6 +224,7 @@ class DeviceBatteryMonitor: ObservableObject {
                 // Seed Logi's fallback level so charging state can be shown even on first read.
                 logiReader?.hintLevel(item.level, forDevice: item.name)
                 guard !logiNames.contains(item.name) else { continue }
+                syncTimes[item.batteryDevice.rawValue] = Date()
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
             }
         }
@@ -247,6 +249,7 @@ class DeviceBatteryMonitor: ObservableObject {
             if !items.isEmpty { logiAccessories = items }
             mergeAccessories()
             for item in items {
+                syncTimes[item.batteryDevice.rawValue] = Date()
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
             }
         }
@@ -260,6 +263,10 @@ class DeviceBatteryMonitor: ObservableObject {
             guard let self else { return }
             btHeadphones = items
             mergeAccessories()
+            for item in items {
+                syncTimes[item.batteryDevice.rawValue] = Date()
+                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
+            }
         }
         reader.startMonitoring()
         btHeadphonesReader = reader
@@ -270,19 +277,49 @@ class DeviceBatteryMonitor: ObservableObject {
         let logiNames  = Set(logiAccessories.map { $0.name })
         let bleNames   = Set(bleAccessories.map { $0.name })
         let ownedNames = Set([phoneName, padName].filter { !$0.isEmpty })
-        let logiOnly   = logiAccessories.filter { !appleNames.contains($0.name) }
-        let bleOnly    = bleAccessories.filter {
+
+        // Try to show user-assigned BT names for Logitech devices connected via direct Bluetooth.
+        // Match by looking for connected BT peripheral-class devices not already shown elsewhere.
+        let logiOnly = Self.applyBTNames(to: logiAccessories.filter { !appleNames.contains($0.name) },
+                                         excluding: appleNames.union(bleNames))
+        let logiDisplayNames = Set(logiOnly.map { $0.name })
+
+        let bleOnly = bleAccessories.filter {
             !appleNames.contains($0.name) &&
             !logiNames.contains($0.name) &&
+            !logiDisplayNames.contains($0.name) &&
             !ownedNames.contains($0.name)
         }
         let btOnly = btHeadphones.filter {
             !appleNames.contains($0.name) &&
             !logiNames.contains($0.name) &&
+            !logiDisplayNames.contains($0.name) &&
             !bleNames.contains($0.name) &&
             !ownedNames.contains($0.name)
         }
         accessories = (appleAccessories + logiOnly + bleOnly + btOnly).sorted { $0.name < $1.name }
+    }
+
+    /// Renames Logitech items using connected IOBluetooth peripheral-class devices.
+    /// Matches by index when counts agree (e.g. 1 Logi device + 1 BT mouse → same device).
+    private static func applyBTNames(to items: [AccessoryBattery],
+                                     excluding occupied: Set<String>) -> [AccessoryBattery] {
+        guard !items.isEmpty else { return items }
+        let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
+        // Connected BT peripheral devices (mice/keyboards: major device class 0x05)
+        // whose names aren't already shown in another reader's output.
+        let candidates = paired.filter { dev in
+            guard dev.isConnected(), let name = dev.name, !occupied.contains(name) else { return false }
+            return (dev.classOfDevice >> 8) & 0x1F == 0x05
+        }
+        guard candidates.count == items.count else { return items }
+        // Sort both sides by name for stable pairing.
+        let sortedItems      = items.sorted { $0.name < $1.name }
+        let sortedCandidates = candidates.sorted { ($0.name ?? "") < ($1.name ?? "") }
+        return zip(sortedItems, sortedCandidates).map { item, btDev in
+            guard let btName = btDev.name, btName != item.name else { return item }
+            return AccessoryBattery(name: btName, level: item.level, charging: item.charging, isApple: item.isApple)
+        }
     }
 
     // MARK: - Icon

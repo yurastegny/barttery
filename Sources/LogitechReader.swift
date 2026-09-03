@@ -17,7 +17,7 @@ class LogitechReader {
     private var timer: Timer?
     private var lastKnownLevels: [String: Int] = [:]
 
-    private static let supportedPIDs: [Int: String] = [
+    static let supportedPIDs: [Int: String] = [
         // MX Master
         0xB019: "MX Master 2S",
         0xB021: "MX Master 3 for Mac",
