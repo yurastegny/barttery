@@ -48,11 +48,21 @@ class MacBatteryReader {
               let props = propsRef?.takeRetainedValue() as? [String: Any]
         else { return nil }
 
-        let current = props["AppleRawCurrentCapacity"] as? Int ?? 0
-        let max     = props["AppleRawMaxCapacity"]     as? Int ?? 0
-        guard max > 0 else { return nil }
-
-        let level = Int(ceil(Double(current) / Double(max) * 100))
+        // Prefer raw mAh values for accuracy (matches ALDente and other battery apps).
+        // macOS 26+ moved raw values into BatteryData dict; older macOS exposes them at top level.
+        let level: Int
+        let battData = props["BatteryData"] as? [String: Any]
+        let remaining = battData?["RemainingCapacity"] as? Int
+                     ?? props["AppleRawCurrentCapacity"] as? Int
+        let fullCharge = battData?["FullChargeCapacity"] as? Int
+                      ?? props["AppleRawMaxCapacity"] as? Int
+        if let r = remaining, let f = fullCharge, f > 0 {
+            level = min(100, Int(ceil(Double(r) / Double(f) * 100)))
+        } else if let pct = props["CurrentCapacity"] as? Int {
+            level = pct
+        } else {
+            return nil
+        }
         let isCharging  = props["IsCharging"]         as? Bool ?? false
         let acConnected = props["ExternalConnected"]  as? Bool ?? false
 

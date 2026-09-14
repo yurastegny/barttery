@@ -450,22 +450,45 @@ struct ThresholdToggleButton: View {
 
 struct ThresholdButtonStyle: ButtonStyle {
     let enabled: Bool
-    @Environment(\.colorScheme) var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(enabled && colorScheme == .light ? Color.white : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        enabled && colorScheme == .dark
-                            ? Color.white
-                            : enabled ? Color.primary : Color.primary.opacity(0.2),
-                        lineWidth: enabled && colorScheme == .dark ? 0.75 : 0.5
-                    )
-            )
-            .contentShape(Rectangle())
+        ThresholdButtonBody(configuration: configuration, enabled: enabled)
+    }
+}
+
+private struct ThresholdButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let enabled: Bool
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            if enabled {
+                configuration.label
+                    .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+                    .glassEffect(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                configuration.label
+                    .opacity(0.4)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
+            }
+        } else {
+            configuration.label
+                .background(enabled && colorScheme == .light ? Color.white : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            enabled && colorScheme == .dark
+                                ? Color.white
+                                : enabled ? Color.primary : Color.primary.opacity(0.2),
+                            lineWidth: enabled && colorScheme == .dark ? 0.75 : 0.5
+                        )
+                )
+                .contentShape(Rectangle())
+        }
     }
 }
 

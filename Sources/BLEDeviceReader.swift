@@ -4,10 +4,15 @@ import Foundation
 // Reads battery level from BLE peripherals via GATT Battery Service (UUID 0x180F).
 // Works for any BLE device that exposes Battery Level (0x2A19) and is visible to
 // CoreBluetooth (i.e. not exclusively managed by IOKit HID kernel driver).
-// Logitech devices are filtered by reading PnP ID (0x2A50) from Device Information
-// Service (0x180A) and checking VendorID == 0x046D; they are handled by LogitechReader.
+// Reads PnP ID (0x2A50) from Device Information Service (0x180A) to identify Logitech
+// devices (VendorID 0x046D). DeviceBatteryMonitor decides whether to suppress them in
+// favour of LogitechReader's HID++ data, or keep them as fallback if HID++ is unavailable.
 class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var onUpdate: (([AccessoryBattery]) -> Void)?
+    /// Called when a peripheral is confirmed as Logitech via PnP ID.
+    /// Passes (current BLE display name, product ID). DeviceBatteryMonitor uses this
+    /// to suppress the BLE entry only when LogitechReader has actual battery data.
+    var onLogiConfirmed: ((String, Int) -> Void)?
 
     private var central: CBCentralManager?
     private var peripherals:     [UUID: CBPeripheral]   = [:]
@@ -15,8 +20,6 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     private var levels:          [UUID: Int]            = [:]
     private var previousLevels:  [UUID: Int]            = [:]
     private var chargingStates:  [UUID: Bool]           = [:]
-    // Peripherals confirmed as Logitech via PnP ID — permanently excluded.
-    private var logiPeripherals: Set<UUID>              = []
 
     private static let battService   = CBUUID(string: "180F")
     private static let battCharUUID  = CBUUID(string: "2A19")
@@ -56,7 +59,6 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             for p in central.retrieveConnectedPeripherals(withServices: [svc]) {
                 guard seen.insert(p.identifier).inserted else { continue }
                 guard peripherals[p.identifier] == nil else { continue }
-                guard !logiPeripherals.contains(p.identifier) else { continue }
                 // iPhones and iPads are handled by IDeviceReader; skip them here.
                 let lower = (p.name ?? "").lowercased()
                 guard !lower.contains("iphone"), !lower.contains("ipad") else { continue }
@@ -108,13 +110,15 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
         if ch.uuid == Self.pnpIDCharUUID {
-            // PnP ID layout: [vendorIDSource(1), vendorID(2 LE), productID(2), productVersion(2)]
-            if let data = ch.value, data.count >= 3 {
-                let vendorID = UInt16(data[1]) | (UInt16(data[2]) << 8)
-                if vendorID == 0x046D {  // Logitech — handled by LogitechReader via HID++ 2.0
-                    logiPeripherals.insert(p.identifier)
-                    remove(p.identifier)
-                    publish()
+            // PnP ID layout: [vendorIDSource(1), vendorID(2 LE), productID(2 LE), productVersion(2)]
+            if let data = ch.value, data.count >= 5 {
+                let vendorID  = UInt16(data[1]) | (UInt16(data[2]) << 8)
+                let productID = Int(UInt16(data[3]) | (UInt16(data[4]) << 8))
+                if vendorID == 0x046D {
+                    // Notify DeviceBatteryMonitor; it decides whether to suppress this BLE entry
+                    // (when LogitechReader has HID++ data) or keep it (as fallback when HID++ fails).
+                    let name = p.name ?? "Unknown Device"
+                    DispatchQueue.main.async { [weak self] in self?.onLogiConfirmed?(name, productID) }
                 }
             }
             return

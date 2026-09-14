@@ -58,6 +58,9 @@ class DeviceBatteryMonitor: ObservableObject {
     // Names of devices currently visible via IOKit HID++, updated at the start of each refresh.
     // Blocks BLE from racing in while battery queries are still running.
     private var claimedByLogi:    Set<String>        = []
+    // BLE display name → canonical Logitech name, populated via PnP ID reads.
+    // Used to suppress a BLE entry only when LogitechReader has actual battery data.
+    private var bleLogiMapping:   [String: String]   = [:]
 
     init() {
         setupMac()
@@ -219,13 +222,20 @@ class DeviceBatteryMonitor: ObservableObject {
             guard let self else { return }
             bleAccessories = items
             mergeAccessories()
-            let logiNames = Set(logiAccessories.map { $0.name }).union(claimedByLogi)
+            let logiCanonical = Set(logiAccessories.map { $0.name }).union(claimedByLogi)
             for item in items {
-                // Seed Logi's fallback level so charging state can be shown even on first read.
-                logiReader?.hintLevel(item.level, forDevice: item.name)
-                guard !logiNames.contains(item.name) else { continue }
+                let canonical = bleLogiMapping[item.name] ?? item.name
+                logiReader?.hintLevel(item.level, forDevice: canonical)
+                guard !logiCanonical.contains(canonical) else { continue }
                 syncTimes[item.batteryDevice.rawValue] = Date()
                 NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
+            }
+        }
+        reader.onLogiConfirmed = { [weak self] bleName, pid in
+            guard let self else { return }
+            if let canonical = LogitechReader.supportedPIDs[pid] {
+                bleLogiMapping[bleName] = canonical
+                mergeAccessories()
             }
         }
         reader.startMonitoring()
@@ -284,11 +294,15 @@ class DeviceBatteryMonitor: ObservableObject {
                                          excluding: appleNames.union(bleNames))
         let logiDisplayNames = Set(logiOnly.map { $0.name })
 
-        let bleOnly = bleAccessories.filter {
-            !appleNames.contains($0.name) &&
-            !logiNames.contains($0.name) &&
-            !logiDisplayNames.contains($0.name) &&
-            !ownedNames.contains($0.name)
+        let bleOnly = bleAccessories.filter { item in
+            if appleNames.contains(item.name)       { return false }
+            if logiNames.contains(item.name)        { return false }
+            if logiDisplayNames.contains(item.name) { return false }
+            if ownedNames.contains(item.name)       { return false }
+            // Suppress when BLE confirmed Logitech via PnP ID and LogitechReader has/sees the device.
+            if let canonical = bleLogiMapping[item.name],
+               logiNames.contains(canonical) || claimedByLogi.contains(canonical) { return false }
+            return true
         }
         let btOnly = btHeadphones.filter {
             !appleNames.contains($0.name) &&
