@@ -15,6 +15,7 @@ A macOS menu bar app that shows battery levels for all your devices in one place
 - Magic Keyboard, Mouse & Trackpad — battery levels via Bluetooth
 - Logitech mice — MX Master 2S/3/3S/4, MX Anywhere 2S/3/3S, MX Ergo, M720 Triathlon, MX Vertical — battery level and charging indicator via HID++ 2.0
 - Logitech keyboards — MX Keys, MX Keys Mini, MX Keys S, K380, K780, K850 — battery level via HID++ 2.0
+- Bluetooth headphones — battery level via Bluetooth
 - BLE devices — any Bluetooth LE peripheral with a standard Battery Service
 
 Notifications — get alerted when any device drops to 20%, or reaches 80% / 100% while charging. Configure per device.
@@ -23,11 +24,11 @@ Notifications — get alerted when any device drops to 20%, or reaches 80% / 100
 
 ## Screenshot
 
-<img src="./img/screen.jpeg" alt="Screenshot" width="1560"/>
+<img src="./img/screen.png" alt="Screenshot" width="549"/>
 
 ## Requirements
 
-- macOS 13 Ventura or later
+- macOS 13 Ventura or later (including macOS 27)
 - For iPhone / iPad / Apple Watch: connect via USB cable to Mac and enable Wi-Fi sync in Finder. On the first USB connection, you'll need to **Trust** the computer.
 
 ## Installation
