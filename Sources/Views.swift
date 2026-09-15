@@ -237,7 +237,30 @@ private struct MenuBarWindowHeightSync: NSViewRepresentable {
         window.backgroundColor = .clear
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        setWindowCornerRadius(window, popupCornerRadius)
         window.invalidateShadow()
+    }
+
+    private static func setWindowCornerRadius(_ window: NSWindow, _ radius: CGFloat) {
+        guard let cls: AnyClass = object_getClass(window) else { return }
+        for name in [
+            "_setCornerRadius:",
+            "_setEffectiveCornerRadius:",
+            "_setTopCornerRadius:",
+            "_setBottomCornerRadius:"
+        ] {
+            let sel = NSSelectorFromString(name)
+            guard let method = class_getInstanceMethod(cls, sel) else { continue }
+            let fn = unsafeBitCast(
+                method_getImplementation(method),
+                to: (@convention(c) (AnyObject, Selector, CGFloat) -> Void).self
+            )
+            fn(window, sel, radius)
+        }
+        for name in ["_updateCornerMask", "_cornerMaskChanged"] {
+            let sel = NSSelectorFromString(name)
+            if window.responds(to: sel) { window.perform(sel) }
+        }
     }
 
     private static func resize(window: NSWindow?, contentHeight: CGFloat) {

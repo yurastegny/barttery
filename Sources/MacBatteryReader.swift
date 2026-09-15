@@ -48,20 +48,19 @@ class MacBatteryReader {
               let props = propsRef?.takeRetainedValue() as? [String: Any]
         else { return nil }
 
-        // Prefer raw mAh values for accuracy (matches ALDente and other battery apps).
-        // macOS 26+ moved raw values into BatteryData dict; older macOS exposes them at top level.
-        let level: Int
+        // CurrentCapacity is Apple's smoothed percentage — matches the menu bar and AlDente.
+        // Raw mAh (RemainingCapacity / FullChargeCapacity) diverges because of charge smoothing.
         let battData = props["BatteryData"] as? [String: Any]
-        let remaining = battData?["RemainingCapacity"] as? Int
-                     ?? props["AppleRawCurrentCapacity"] as? Int
-        let fullCharge = battData?["FullChargeCapacity"] as? Int
-                      ?? props["AppleRawMaxCapacity"] as? Int
-        if let r = remaining, let f = fullCharge, f > 0 {
-            level = min(100, Int(ceil(Double(r) / Double(f) * 100)))
-        } else if let pct = props["CurrentCapacity"] as? Int {
-            level = pct
+        let level: Int
+        if let pct = battData?["CurrentCapacity"] as? Int ?? props["CurrentCapacity"] as? Int, pct > 0 {
+            level = min(100, pct)
         } else {
-            return nil
+            let remaining = battData?["RemainingCapacity"] as? Int
+                         ?? props["AppleRawCurrentCapacity"] as? Int
+            let fullCharge = battData?["FullChargeCapacity"] as? Int
+                          ?? props["AppleRawMaxCapacity"] as? Int
+            guard let r = remaining, let f = fullCharge, f > 0 else { return nil }
+            level = min(100, Int(ceil(Double(r) / Double(f) * 100)))
         }
         let isCharging  = props["IsCharging"]         as? Bool ?? false
         let acConnected = props["ExternalConnected"]  as? Bool ?? false
