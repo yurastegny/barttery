@@ -11,6 +11,7 @@ SIGN      ?= Apple Development: yura@yura.me (69Z678PHDM)
 all: build
 
 build:
+	rm -rf $(BUNDLE)
 	swift build -c release --arch arm64
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
@@ -35,11 +36,16 @@ install: build
 	xattr -dr com.apple.quarantine /Applications/$(BUNDLE) 2>/dev/null || true
 	@echo "=> Installed to /Applications/$(BUNDLE)"
 
+# Apple Development signatures look "damaged" on other Macs, so the DMG is unsigned.
 dmg: build
 	@VERSION=$$(defaults read "$(PWD)/$(CONTENTS)/Info" CFBundleShortVersionString); \
 	DMG="Barttery-$$VERSION.dmg"; \
 	STAGING=$$(mktemp -d); \
-	cp -r $(BUNDLE) "$$STAGING/"; \
+	ditto $(BUNDLE) "$$STAGING/$(BUNDLE)"; \
+	find "$$STAGING/$(BUNDLE)" \( -name '*.dylib' -o -name Barttery -o -name idevice_id -o -name ideviceinfo -o -name comptest -o -name bartbeat \) -type f | while read f; do \
+	  codesign --remove-signature "$$f" 2>/dev/null || true; \
+	done; \
+	codesign --remove-signature "$$STAGING/$(BUNDLE)" 2>/dev/null || true; \
 	ln -s /Applications "$$STAGING/Applications"; \
 	hdiutil create -volname "Barttery" -srcfolder "$$STAGING" -ov -format UDZO "$$DMG"; \
 	rm -rf "$$STAGING"; \

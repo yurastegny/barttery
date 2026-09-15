@@ -41,19 +41,18 @@ Notifications — get alerted when any device drops to 20%, or reaches 80% / 100
 
 ### How to run
 
-Right now, in my region it's not possible to get an Apple Developer account. Without it, Apple does not trust the app. But you can open it using the following method:
+Right now, in my region it's not possible to get an Apple Developer account. Without it, Apple does not trust the app. macOS will block the first launch until you allow it.
 
-1. Try to open the app by double-clicking it — you'll see a warning:
-**"Barttery" can't be opened because the developer cannot be verified**.
-2. Open **System Settings** → in the sidebar, click **Privacy & Security**.
-3. Scroll down to the **Security** section.
-4. You'll see a message like:
-**"Barttery" was blocked from use because it is not from an identified developer**.
-Next to it, there will be a button "**Open Anyway**" (sometimes just "**Open**").
-5. Click "**Open Anyway**".
-6. Enter your administrator password, then confirm by clicking "**Open**".
+**macOS 13–14:** Control-click **Barttery** → **Open** → **Open**.
 
-After this, the app will be added to the exceptions list and will launch normally.
+**macOS 15 and later:**
+
+1. Double-click **Barttery**. You'll get a warning such as **"Apple could not verify "Barttery" is free of malware"** or **"Barttery" can't be opened because the developer cannot be verified**.
+2. Click **Done** — not **Move to Trash**.
+3. Open **System Settings → Privacy & Security** and scroll down to **Security**.
+4. Click **Open Anyway** next to the message that Barttery was blocked, then enter your password (or use Touch ID) and click **Open**.
+
+After this, macOS remembers the exception and the app launches normally.
 
 ## License
 
