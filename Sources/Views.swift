@@ -186,7 +186,7 @@ private struct PopupGlassBackground: ViewModifier {
         if #available(macOS 26.0, *) {
             content
                 .glassEffect(
-                    .regular,
+                    .clear,
                     in: RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
                 )
                 .containerBackground(.clear, for: .window)
@@ -194,7 +194,7 @@ private struct PopupGlassBackground: ViewModifier {
             content
                 .background {
                     RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
-                        .fill(.regularMaterial)
+                        .fill(.thinMaterial)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous))
         }
@@ -212,7 +212,7 @@ private struct MenuBarWindowHeightSync: NSViewRepresentable {
             return view
         } else {
             let effect = NSVisualEffectView()
-            effect.material = .menu
+            effect.material = .hudWindow
             effect.blendingMode = .behindWindow
             effect.state = .active
             return effect
