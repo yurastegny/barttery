@@ -14,6 +14,7 @@ build:
 	swift build -c release --arch arm64
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BIN_DIR)/$(APP) $(CONTENTS)/MacOS/$(APP)
+	@chmod +x $(CONTENTS)/MacOS/$(APP)
 	@cp Info.plist $(CONTENTS)/
 	@cp AppIcon.icns $(CONTENTS)/Resources/
 	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat $(CONTENTS)/Resources/

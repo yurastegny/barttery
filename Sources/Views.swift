@@ -47,6 +47,7 @@ struct MenuContentView: View {
                     }
                 )
         }
+        .scrollContentBackground(.hidden)
         .frame(width: 360, alignment: .top)
         .frame(height: fitted, alignment: .top)
         .onPreferenceChange(MenuContentHeightKey.self) { newValue in
@@ -58,6 +59,7 @@ struct MenuContentView: View {
             }
         }
         .background(MenuBarWindowHeightAnimator(height: fitted ?? 0))
+        .modifier(PopupGlassBackground())
     }
 
     private static var maxPopupHeight: CGFloat {
@@ -76,9 +78,6 @@ struct MenuContentView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .onHover { inside in
-                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
                 Spacer()
                 Button {
                     monitor.refresh()
@@ -182,66 +181,63 @@ private struct MenuBarWindowHeightAnimator: View, Animatable {
     }
 }
 
+private struct PopupGlassBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
+                )
+                .containerBackground(.clear, for: .window)
+        } else {
+            content
+                .background {
+                    RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous))
+        }
+    }
+}
+
 private struct MenuBarWindowHeightSync: NSViewRepresentable {
     let contentHeight: CGFloat
 
-    func makeNSView(context: Context) -> NSView { NSView() }
+    func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26.0, *) {
+            let view = NSView()
+            view.wantsLayer = true
+            view.layer?.backgroundColor = NSColor.clear.cgColor
+            return view
+        } else {
+            let effect = NSVisualEffectView()
+            effect.material = .menu
+            effect.blendingMode = .behindWindow
+            effect.state = .active
+            return effect
+        }
+    }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        if nsView.window == nil {
-            DispatchQueue.main.async {
-                Self.applyWindowShape(nsView.window)
-                Self.resize(window: nsView.window, contentHeight: contentHeight)
-            }
-        } else {
-            Self.applyWindowShape(nsView.window)
+        let apply = {
+            Self.prepareWindow(nsView.window)
             Self.resize(window: nsView.window, contentHeight: contentHeight)
         }
+        if nsView.window == nil {
+            DispatchQueue.main.async(execute: apply)
+        } else {
+            apply()
+        }
     }
 
-    private static func applyWindowShape(_ window: NSWindow?) {
+    private static func prepareWindow(_ window: NSWindow?) {
         guard let window else { return }
-        setWindowCornerRadius(window, popupCornerRadius)
-        if #available(macOS 26.0, *) {
-            applyGlassCornerRadius(from: window.contentView)
-        }
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         window.invalidateShadow()
-    }
-
-    private static func setWindowCornerRadius(_ window: NSWindow, _ radius: CGFloat) {
-        guard let cls: AnyClass = object_getClass(window) else { return }
-        for name in [
-            "_setCornerRadius:",
-            "_setEffectiveCornerRadius:",
-            "_setTopCornerRadius:",
-            "_setBottomCornerRadius:"
-        ] {
-            let sel = NSSelectorFromString(name)
-            guard let method = class_getInstanceMethod(cls, sel) else { continue }
-            let fn = unsafeBitCast(
-                method_getImplementation(method),
-                to: (@convention(c) (AnyObject, Selector, CGFloat) -> Void).self
-            )
-            fn(window, sel, radius)
-        }
-        for name in ["_updateCornerMask", "_cornerMaskChanged"] {
-            let sel = NSSelectorFromString(name)
-            if window.responds(to: sel) { window.perform(sel) }
-        }
-    }
-
-    @available(macOS 26.0, *)
-    private static func applyGlassCornerRadius(from start: NSView?) {
-        guard let start else { return }
-        func walk(_ view: NSView) {
-            if let glass = view as? NSGlassEffectView {
-                glass.cornerRadius = popupCornerRadius
-            }
-            view.subviews.forEach(walk)
-        }
-        var root: NSView? = start
-        while let superview = root?.superview { root = superview }
-        if let root { walk(root) }
     }
 
     private static func resize(window: NSWindow?, contentHeight: CGFloat) {
@@ -303,8 +299,8 @@ struct DeviceRow: View {
             if expanded {
                 NotificationThresholdRow(device: device)
                     .padding(.leading, 38)
-                        .padding(.top, -2)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.top, -2)
+                    .transition(.opacity)
             }
         }
     }
@@ -385,8 +381,8 @@ struct AirPodsRow: View {
                     if expanded {
                         NotificationThresholdRow(device: .airPods)
                             .padding(.leading, 38)
-                        .padding(.top, -2)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .padding(.top, -2)
+                            .transition(.opacity)
                     }
                 }
             }
@@ -475,8 +471,8 @@ struct AccessoryRow: View {
             if expanded {
                 NotificationThresholdRow(device: accessory.batteryDevice)
                     .padding(.leading, 38)
-                        .padding(.top, -2)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.top, -2)
+                    .transition(.opacity)
             }
         }
     }
@@ -527,6 +523,17 @@ struct NotificationThresholdRow: View {
                 }
             }
         }
+        .modifier(IsolatedGeometry())
+    }
+}
+
+private struct IsolatedGeometry: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14.0, *) {
+            content.geometryGroup()
+        } else {
+            content
+        }
     }
 }
 
@@ -567,7 +574,13 @@ private struct ThresholdButtonBody: View {
                 configuration.label
                     .scaleEffect(configuration.isPressed ? 0.94 : 1)
                     .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-                    .glassEffect(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background {
+                        Color.clear
+                            .glassEffect(
+                                .regular.interactive(),
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                    }
             } else {
                 configuration.label
                     .opacity(0.4)
@@ -607,10 +620,18 @@ private func formatMinutes(_ minutes: Int) -> String {
     return h > 0 ? "\(h):\(String(format: "%02d", m))" : "0:\(String(format: "%02d", m))"
 }
 
+private extension Color {
+    init(hex: UInt32) {
+        self.init(red:   Double((hex >> 16) & 0xFF) / 255,
+                  green: Double((hex >>  8) & 0xFF) / 255,
+                  blue:  Double( hex        & 0xFF) / 255)
+    }
+}
+
 private func batteryColor(_ level: Int) -> Color {
     switch level {
     case 0...20: return .red
     case 21...40: return .orange
-    default:      return .green
+    default:      return Color(hex: 0x57A269)
     }
 }
