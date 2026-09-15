@@ -36,16 +36,23 @@ install: build
 	xattr -dr com.apple.quarantine /Applications/$(BUNDLE) 2>/dev/null || true
 	@echo "=> Installed to /Applications/$(BUNDLE)"
 
-# Apple Development signatures look "damaged" on other Macs, so the DMG is unsigned.
+# Apple Silicon rejects unsigned apps. Ad-hoc signatures still launch after Open Anyway;
+# Apple Development certs look damaged on other Macs and hide that button.
 dmg: build
 	@VERSION=$$(defaults read "$(PWD)/$(CONTENTS)/Info" CFBundleShortVersionString); \
 	DMG="Barttery-$$VERSION.dmg"; \
 	STAGING=$$(mktemp -d); \
 	ditto $(BUNDLE) "$$STAGING/$(BUNDLE)"; \
-	find "$$STAGING/$(BUNDLE)" \( -name '*.dylib' -o -name Barttery -o -name idevice_id -o -name ideviceinfo -o -name comptest -o -name bartbeat \) -type f | while read f; do \
-	  codesign --remove-signature "$$f" 2>/dev/null || true; \
+	STAGEAPP="$$STAGING/$(BUNDLE)"; \
+	for f in $$STAGEAPP/Contents/Resources/*.dylib \
+	         $$STAGEAPP/Contents/Resources/idevice_id \
+	         $$STAGEAPP/Contents/Resources/ideviceinfo \
+	         $$STAGEAPP/Contents/Resources/comptest \
+	         $$STAGEAPP/Contents/Resources/bartbeat \
+	         $$STAGEAPP/Contents/MacOS/Barttery; do \
+	  [ -f "$$f" ] && codesign --force --sign - "$$f"; \
 	done; \
-	codesign --remove-signature "$$STAGING/$(BUNDLE)" 2>/dev/null || true; \
+	codesign --force --sign - "$$STAGEAPP"; \
 	ln -s /Applications "$$STAGING/Applications"; \
 	hdiutil create -volname "Barttery" -srcfolder "$$STAGING" -ov -format UDZO "$$DMG"; \
 	rm -rf "$$STAGING"; \
