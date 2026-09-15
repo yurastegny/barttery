@@ -1,6 +1,9 @@
 import SwiftUI
 import AppKit
 
+private let popupExpandAnimation: Animation = .easeInOut(duration: 0.2)
+private let popupCornerRadius: CGFloat = 14
+
 private struct RefreshButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -27,9 +30,42 @@ struct MenuBarLabel: View {
 struct MenuContentView: View {
     @EnvironmentObject var monitor: DeviceBatteryMonitor
     @ObservedObject private var settings = AppSettings.shared
+    @State private var contentHeight: CGFloat = 0
 
-    @State private var windowTimer: Timer?
     var body: some View {
+        let fitted = contentHeight > 1 ? min(contentHeight, Self.maxPopupHeight) : nil
+        let scrolling = fitted.map { contentHeight > $0 + 1 } ?? false
+
+        ScrollView(.vertical, showsIndicators: scrolling) {
+            menuStack
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: MenuContentHeightKey.self,
+                            value: geo.size.height
+                        )
+                    }
+                )
+        }
+        .frame(width: 360, alignment: .top)
+        .frame(height: fitted, alignment: .top)
+        .onPreferenceChange(MenuContentHeightKey.self) { newValue in
+            guard abs(newValue - contentHeight) > 0.5 else { return }
+            if contentHeight <= 1 {
+                contentHeight = newValue
+            } else {
+                withAnimation(popupExpandAnimation) { contentHeight = newValue }
+            }
+        }
+        .background(MenuBarWindowHeightAnimator(height: fitted ?? 0))
+    }
+
+    private static var maxPopupHeight: CGFloat {
+        guard let screen = NSScreen.main else { return 800 }
+        return max(240, screen.visibleFrame.height - 12)
+    }
+
+    private var menuStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button {
@@ -56,61 +92,27 @@ struct MenuContentView: View {
             .padding(.top, 10)
 
             VStack(spacing: 18) {
-                // MacBook
                 if let mac = monitor.macBattery {
-                    DeviceRow(
-                        icon: "􁈸",
-                        name: monitor.macName,
-                        battery: mac.level,
-                        state: mac.state,
-                        device: .mac
-                    )
+                    DeviceRow(icon: "􁈸", name: monitor.macName,
+                              battery: mac.level, state: mac.state, device: .mac)
                 }
-
-                // AirPods
                 if let pods = monitor.airPodsBattery {
-                    AirPodsRow(
-                        name: monitor.airPodsName,
-                        battery: pods
-                    )
+                    AirPodsRow(name: monitor.airPodsName, battery: pods)
                 }
-
-                // Accessories (Magic Keyboard, Mouse, Trackpad)
                 ForEach(monitor.accessories, id: \.name) { acc in
                     AccessoryRow(accessory: acc)
                 }
-
-                // iPhone
                 if let pct = monitor.phoneBattery {
-                    DeviceRow(
-                        icon: "􀟜",
-                        name: monitor.phoneName,
-                        battery: pct,
-                        state: monitor.phoneCharging ? .charging : .discharging,
-                        device: .phone
-                    )
+                    DeviceRow(icon: "􀟜", name: monitor.phoneName,
+                              battery: pct, state: monitor.phoneCharging ? .charging : .discharging, device: .phone)
                 }
-
-                // iPad
                 if let pct = monitor.padBattery {
-                    DeviceRow(
-                        icon: "􀟠",
-                        name: monitor.padName,
-                        battery: pct,
-                        state: monitor.padCharging ? .charging : .discharging,
-                        device: .pad
-                    )
+                    DeviceRow(icon: "􀟠", name: monitor.padName,
+                              battery: pct, state: monitor.padCharging ? .charging : .discharging, device: .pad)
                 }
-
-                // Apple Watch
                 if let watch = monitor.watchBattery {
-                    DeviceRow(
-                        icon: "􀟤",
-                        name: watch.name,
-                        battery: watch.level,
-                        state: watch.isCharging ? .charging : .discharging,
-                        device: .watch
-                    )
+                    DeviceRow(icon: "􀟤", name: watch.name,
+                              battery: watch.level, state: watch.isCharging ? .charging : .discharging, device: .watch)
                 }
             }
             .padding(.leading, 20)
@@ -156,9 +158,107 @@ struct MenuContentView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .frame(width: 360)
     }
 
+}
+
+private struct MenuContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct MenuBarWindowHeightAnimator: View, Animatable {
+    var height: CGFloat
+
+    var animatableData: CGFloat {
+        get { height }
+        set { height = newValue }
+    }
+
+    var body: some View {
+        MenuBarWindowHeightSync(contentHeight: height)
+    }
+}
+
+private struct MenuBarWindowHeightSync: NSViewRepresentable {
+    let contentHeight: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if nsView.window == nil {
+            DispatchQueue.main.async {
+                Self.applyWindowShape(nsView.window)
+                Self.resize(window: nsView.window, contentHeight: contentHeight)
+            }
+        } else {
+            Self.applyWindowShape(nsView.window)
+            Self.resize(window: nsView.window, contentHeight: contentHeight)
+        }
+    }
+
+    private static func applyWindowShape(_ window: NSWindow?) {
+        guard let window else { return }
+        setWindowCornerRadius(window, popupCornerRadius)
+        if #available(macOS 26.0, *) {
+            applyGlassCornerRadius(from: window.contentView)
+        }
+        window.invalidateShadow()
+    }
+
+    private static func setWindowCornerRadius(_ window: NSWindow, _ radius: CGFloat) {
+        guard let cls: AnyClass = object_getClass(window) else { return }
+        for name in [
+            "_setCornerRadius:",
+            "_setEffectiveCornerRadius:",
+            "_setTopCornerRadius:",
+            "_setBottomCornerRadius:"
+        ] {
+            let sel = NSSelectorFromString(name)
+            guard let method = class_getInstanceMethod(cls, sel) else { continue }
+            let fn = unsafeBitCast(
+                method_getImplementation(method),
+                to: (@convention(c) (AnyObject, Selector, CGFloat) -> Void).self
+            )
+            fn(window, sel, radius)
+        }
+        for name in ["_updateCornerMask", "_cornerMaskChanged"] {
+            let sel = NSSelectorFromString(name)
+            if window.responds(to: sel) { window.perform(sel) }
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private static func applyGlassCornerRadius(from start: NSView?) {
+        guard let start else { return }
+        func walk(_ view: NSView) {
+            if let glass = view as? NSGlassEffectView {
+                glass.cornerRadius = popupCornerRadius
+            }
+            view.subviews.forEach(walk)
+        }
+        var root: NSView? = start
+        while let superview = root?.superview { root = superview }
+        if let root { walk(root) }
+    }
+
+    private static func resize(window: NSWindow?, contentHeight: CGFloat) {
+        guard let window, let contentView = window.contentView, contentHeight > 1 else { return }
+        let top = window.frame.maxY
+        let screenMinY = (window.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0
+        let chrome = window.frame.height - contentView.frame.height
+        let capped = min(
+            contentHeight + chrome,
+            max(120, top - screenMinY)
+        )
+        guard abs(capped - window.frame.height) > 0.05 else { return }
+        var frame = window.frame
+        frame.size.height = capped
+        frame.origin.y = top - capped
+        window.setFrame(frame, display: true, animate: false)
+    }
 }
 
 // MARK: - Device row
@@ -197,7 +297,7 @@ struct DeviceRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                withAnimation(popupExpandAnimation) { expanded.toggle() }
             }
 
             if expanded {
@@ -279,7 +379,7 @@ struct AirPodsRow: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                        withAnimation(popupExpandAnimation) { expanded.toggle() }
                     }
 
                     if expanded {
@@ -369,7 +469,7 @@ struct AccessoryRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                withAnimation(popupExpandAnimation) { expanded.toggle() }
             }
 
             if expanded {
