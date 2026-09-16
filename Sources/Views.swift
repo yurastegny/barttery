@@ -59,7 +59,6 @@ struct MenuContentView: View {
             }
         }
         .background(MenuBarWindowHeightAnimator(height: fitted ?? 0))
-        .modifier(PopupGlassBackground())
     }
 
     private static var maxPopupHeight: CGFloat {
@@ -181,47 +180,24 @@ private struct MenuBarWindowHeightAnimator: View, Animatable {
     }
 }
 
-private struct PopupGlassBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .clear,
-                    in: RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
-                )
-                .containerBackground(.clear, for: .window)
-        } else {
-            content
-                .background {
-                    RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous)
-                        .fill(.thinMaterial)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: popupCornerRadius, style: .continuous))
-        }
-    }
-}
-
 private struct MenuBarWindowHeightSync: NSViewRepresentable {
     let contentHeight: CGFloat
 
-    func makeNSView(context: Context) -> NSView {
-        if #available(macOS 26.0, *) {
-            let view = NSView()
-            view.wantsLayer = true
-            view.layer?.backgroundColor = NSColor.clear.cgColor
-            return view
-        } else {
-            let effect = NSVisualEffectView()
-            effect.material = .hudWindow
-            effect.blendingMode = .behindWindow
-            effect.state = .active
-            return effect
-        }
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let effect = NSVisualEffectView()
+        effect.material = .menu
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = popupCornerRadius
+        effect.layer?.cornerCurve = .continuous
+        effect.layer?.masksToBounds = true
+        return effect
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         let apply = {
-            Self.prepareWindow(nsView.window)
+            Self.applyWindowShape(probe: nsView)
             Self.resize(window: nsView.window, contentHeight: contentHeight)
         }
         if nsView.window == nil {
@@ -231,14 +207,43 @@ private struct MenuBarWindowHeightSync: NSViewRepresentable {
         }
     }
 
-    private static func prepareWindow(_ window: NSWindow?) {
-        guard let window else { return }
+    private static func applyWindowShape(probe: NSView) {
+        guard let window = probe.window else { return }
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.contentView?.wantsLayer = true
-        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         setWindowCornerRadius(window, popupCornerRadius)
+        applyMenuMaterial(from: window.contentView, probe: probe)
         window.invalidateShadow()
+    }
+
+    private static func isAncestor(_ view: NSView, of descendant: NSView) -> Bool {
+        var current: NSView? = descendant
+        while let node = current {
+            if node === view { return true }
+            current = node.superview
+        }
+        return false
+    }
+
+    private static func applyMenuMaterial(from start: NSView?, probe: NSView) {
+        guard let start else { return }
+        func walk(_ view: NSView) {
+            if let effect = view as? NSVisualEffectView {
+                effect.material = .menu
+                effect.blendingMode = .behindWindow
+                effect.state = .active
+            }
+            if #available(macOS 26.0, *),
+               let glass = view as? NSGlassEffectView,
+               glass.bounds.width > 200,
+               !isAncestor(glass, of: probe) {
+                glass.isHidden = true
+            }
+            view.subviews.forEach(walk)
+        }
+        var root: NSView? = start
+        while let superview = root?.superview { root = superview }
+        if let root { walk(root) }
     }
 
     private static func setWindowCornerRadius(_ window: NSWindow, _ radius: CGFloat) {
