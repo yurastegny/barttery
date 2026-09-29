@@ -91,7 +91,7 @@ struct MenuContentView: View {
 
             VStack(spacing: 18) {
                 if let mac = monitor.macBattery {
-                    DeviceRow(icon: "􁈸", name: monitor.macName,
+                    DeviceRow(icon: "macbook", name: monitor.macName,
                               battery: mac.level, state: mac.state, device: .mac)
                 }
                 if let pods = monitor.airPodsBattery {
@@ -101,15 +101,15 @@ struct MenuContentView: View {
                     AccessoryRow(accessory: acc)
                 }
                 if let pct = monitor.phoneBattery {
-                    DeviceRow(icon: "􀟜", name: monitor.phoneName,
+                    DeviceRow(icon: "iphone", name: monitor.phoneName,
                               battery: pct, state: monitor.phoneCharging ? .charging : .discharging, device: .phone)
                 }
                 if let pct = monitor.padBattery {
-                    DeviceRow(icon: "􀟠", name: monitor.padName,
+                    DeviceRow(icon: "ipad", name: monitor.padName,
                               battery: pct, state: monitor.padCharging ? .charging : .discharging, device: .pad)
                 }
                 if let watch = monitor.watchBattery {
-                    DeviceRow(icon: "􀟤", name: watch.name,
+                    DeviceRow(icon: "applewatch", name: watch.name,
                               battery: watch.level, state: watch.isCharging ? .charging : .discharging, device: .watch)
                 }
             }
@@ -299,7 +299,7 @@ struct DeviceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(icon)
+                Image(systemName: icon)
                     .font(.system(size: 17, weight: .regular))
                     .foregroundColor(.primary)
                     .frame(width: 26, alignment: .center)
@@ -382,7 +382,7 @@ struct AirPodsRow: View {
             if let barLevel = podsBarLevel {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("􀪷")
+                        Image(systemName: isPro ? "airpodspro" : "airpods")
                             .font(.system(size: 17, weight: .regular))
                             .foregroundColor(.primary)
                             .frame(width: 26, height: 20, alignment: .center)
@@ -417,7 +417,7 @@ struct AirPodsRow: View {
 
             if let caseLevel = battery.case {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("􀹫")
+                    Image(systemName: isPro ? "airpodspro.chargingcase.wireless" : "airpods.chargingcase")
                         .font(.system(size: 17, weight: .regular))
                         .foregroundColor(.primary)
                         .frame(width: 26, height: 20, alignment: .center)
@@ -466,16 +466,10 @@ struct AccessoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Group {
-                    if let ch = accessory.iconChar {
-                        Text(ch)
-                    } else {
-                        Image(systemName: accessory.icon)
-                    }
-                }
-                .font(.system(size: 17, weight: .regular))
-                .foregroundColor(.primary)
-                .frame(width: 26, height: 20, alignment: .center)
+                Image(systemName: accessory.icon)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundColor(.primary)
+                    .frame(width: 26, height: 20, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {

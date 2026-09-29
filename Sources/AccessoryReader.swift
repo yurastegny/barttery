@@ -23,12 +23,8 @@ struct AccessoryBattery {
         let lower = name.lowercased()
         if isHeadphones               { return "headphones" }
         if isKeyboard                 { return "keyboard" }
-        if lower.contains("trackpad") { return "trackpad" }
+        if lower.contains("trackpad") { return "rectangle.and.hand.point.up.left" }
         return isApple ? "magicmouse" : "computermouse"
-    }
-
-    var iconChar: String? {
-        name.lowercased().contains("trackpad") ? "􀏃" : nil
     }
 
     var batteryDevice: BatteryDevice {
