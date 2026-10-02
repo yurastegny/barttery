@@ -85,10 +85,11 @@ class IDeviceReader: NSObject {
         ) { _, new in new }
 
         let outPipe = Pipe()
+        let errPipe = Pipe()
         let inPipe  = Pipe()   // kept open so bartbeat's stdin doesn't get EOF
         proc.standardOutput = outPipe
         proc.standardInput  = inPipe
-        proc.standardError  = Pipe()
+        proc.standardError  = errPipe
 
         var lineBuf = ""
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] h in
@@ -100,9 +101,13 @@ class IDeviceReader: NSObject {
                 if !line.isEmpty { self?.handle(line: line) }
             }
         }
+        // Drain stderr so bartbeat's debug logging never fills the pipe buffer and
+        // blocks its writer thread — an unread pipe is a classic way to wedge it.
+        errPipe.fileHandleForReading.readabilityHandler = { h in _ = h.availableData }
 
         proc.terminationHandler = { [weak self] _ in
             outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 self?.launchBartbeat()
             }
