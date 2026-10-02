@@ -18,7 +18,7 @@ func renderBatteryIcon(level: Int, state: ChargeState) -> NSImage {
     // jump in size when a charging/pause symbol appears or disappears.
     let bodyW: CGFloat
     if text.count == 1 {
-        bodyW = 23
+        bodyW = 25
     } else if text.count == 2 && !hasSymbol {
         bodyW = 25
     } else {
