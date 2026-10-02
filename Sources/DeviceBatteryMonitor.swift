@@ -73,6 +73,15 @@ class DeviceBatteryMonitor: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+        // Timers don't fire during sleep, so Logitech/BLE/BT accessories can sit stale
+        // for as long as the Mac was asleep. Force an immediate re-poll on wake.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refresh()
+        }
     }
 
     func refresh() {
