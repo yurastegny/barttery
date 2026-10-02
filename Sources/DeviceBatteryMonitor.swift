@@ -81,10 +81,18 @@ class DeviceBatteryMonitor: ObservableObject {
         bleReader?.refresh()
         logiReader?.refresh()
         btHeadphonesReader?.readOnce()
+        ideviceReader?.scanNow()
+        pruneStaleSyncTimes()
     }
 
     func onPopupOpen() {
         let openTime = Date()
+        // Restart wedged bartbeat only when phone/watch data looks stale.
+        let phoneAge = syncTimes[BatteryDevice.phone.rawValue].map { openTime.timeIntervalSince($0) }
+        let needsKick = phoneAge.map { $0 > 120 } ?? (phoneBattery != nil)
+        if needsKick {
+            ideviceReader?.forceReconnect()
+        }
         refresh()
         retryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -100,6 +108,26 @@ class DeviceBatteryMonitor: ObservableObject {
     func onPopupClose() {
         retryTimer?.invalidate()
         retryTimer = nil
+    }
+
+    /// Hide phone/pad/watch rows whose last sync is older than 30 minutes.
+    private func pruneStaleSyncTimes() {
+        let timeout: TimeInterval = 1800
+        let now = Date()
+        if let t = syncTimes[BatteryDevice.phone.rawValue], now.timeIntervalSince(t) > timeout {
+            phoneBattery = nil
+            syncTimes.removeValue(forKey: BatteryDevice.phone.rawValue)
+            watchBattery = nil
+            syncTimes.removeValue(forKey: BatteryDevice.watch.rawValue)
+        }
+        if let t = syncTimes[BatteryDevice.pad.rawValue], now.timeIntervalSince(t) > timeout {
+            padBattery = nil
+            syncTimes.removeValue(forKey: BatteryDevice.pad.rawValue)
+        }
+        if let t = syncTimes[BatteryDevice.watch.rawValue], now.timeIntervalSince(t) > timeout {
+            watchBattery = nil
+            syncTimes.removeValue(forKey: BatteryDevice.watch.rawValue)
+        }
     }
 
     // MARK: - Setup
@@ -137,6 +165,8 @@ class DeviceBatteryMonitor: ObservableObject {
                         level: level,
                         isCharging: charging ?? false
                     )
+                } else {
+                    self?.syncTimes.removeValue(forKey: BatteryDevice.phone.rawValue)
                 }
             }
         }
@@ -153,6 +183,8 @@ class DeviceBatteryMonitor: ObservableObject {
                         level: level,
                         isCharging: charging ?? false
                     )
+                } else {
+                    self?.syncTimes.removeValue(forKey: BatteryDevice.pad.rawValue)
                 }
             }
         }
@@ -167,6 +199,8 @@ class DeviceBatteryMonitor: ObservableObject {
                         level: watch.level,
                         isCharging: watch.isCharging
                     )
+                } else {
+                    self?.syncTimes.removeValue(forKey: BatteryDevice.watch.rawValue)
                 }
             }
         }

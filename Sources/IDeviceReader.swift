@@ -31,11 +31,13 @@ class IDeviceReader: NSObject {
         libDir = resURL.path
         prepareBinaries()
         launchBartbeat()
-        // Seed lastWatchSuccess from UserDefaults so the 60-min stale check
-        // works correctly even for Watch data that was cached before this launch.
-        if let t = UserDefaults.standard.object(forKey: "watch.lastSyncTime") as? Date {
-            lastWatchSuccess = t
-        }
+        // Seed success timestamps from UserDefaults so the stale check works for
+        // values restored from cache before any live bartbeat update arrives.
+        let ud = UserDefaults.standard
+        if let t = ud.object(forKey: "phone.lastSyncTime") as? Date { lastPhoneSuccess = t }
+        if let t = ud.object(forKey: "pad.lastSyncTime") as? Date   { lastPadSuccess = t }
+        if let t = ud.object(forKey: "watch.lastSyncTime") as? Date { lastWatchSuccess = t }
+        phoneUDID = ud.string(forKey: "phone.lastUDID")
         staleTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.checkStale()
         }
@@ -52,12 +54,21 @@ class IDeviceReader: NSObject {
         restartBartbeat()
     }
 
-    // Triggers an immediate Watch battery check (phone battery comes from bartbeat internally).
+    /// Re-query Watch via comptest. Phone/pad come from bartbeat's own poll loop.
     func scanNow() {
-        guard let udid = phoneUDID else { return }
+        let udid = phoneUDID ?? UserDefaults.standard.string(forKey: "phone.lastUDID")
+        guard let udid else { return }
+        phoneUDID = udid
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.queryWatch(udid: udid)
         }
+    }
+
+    /// Kill and relaunch bartbeat, then re-query Watch. Used on popup open / wake.
+    func forceReconnect() {
+        lastBartbeatRestart = nil
+        restartBartbeat()
+        scanNow()
     }
 
     // MARK: - bartbeat process
@@ -115,7 +126,7 @@ class IDeviceReader: NSObject {
             let name     = json["name"] as? String
             let udid     = json["udid"] as? String
             lastPhoneSuccess = Date()
-            if let udid { phoneUDID = udid }
+            if let udid { phoneUDID = udid; UserDefaults.standard.set(udid, forKey: "phone.lastUDID") }
             if let level {
                 UserDefaults.standard.set(level, forKey: "phone.lastBattery")
                 UserDefaults.standard.set(Date(), forKey: "phone.lastSyncTime")
@@ -138,6 +149,7 @@ class IDeviceReader: NSObject {
         case "connected":
             if json["device_type"] as? String == "phone", let udid = json["udid"] as? String {
                 phoneUDID = udid
+                UserDefaults.standard.set(udid, forKey: "phone.lastUDID")
             }
 
         case "watch":
@@ -201,7 +213,10 @@ class IDeviceReader: NSObject {
         if let last = lastBartbeatRestart, Date().timeIntervalSince(last) < cooldown { return }
         lastBartbeatRestart = Date()
         lastBartbeatOutput  = Date()  // reset so we don't loop immediately
-        bartbeat?.terminate()
+        // Prefer SIGKILL: a wedged bartbeat can ignore SIGTERM and stay alive for hours.
+        if let proc = bartbeat, proc.isRunning {
+            kill(proc.processIdentifier, SIGKILL)
+        }
         bartbeat = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             self?.launchBartbeat()
@@ -210,32 +225,46 @@ class IDeviceReader: NSObject {
 
     private func checkStale() {
         let now = Date()
+        let deviceTimeout: TimeInterval = 1800
 
-        // Restart bartbeat if it's been silent for 3 min while a device was previously active
-        let hadDevice = lastPhoneSuccess != nil || lastPadSuccess != nil
-        if hadDevice, let out = lastBartbeatOutput, now.timeIntervalSince(out) > 180 {
+        // Restart bartbeat if stdout has been silent for 3 min — even when success
+        // timestamps were already cleared. Otherwise a wedged daemon is never replaced.
+        let silent = lastBartbeatOutput.map { now.timeIntervalSince($0) > 180 }
+            ?? (bartbeat?.isRunning == true && now.timeIntervalSince(lastBartbeatRestart ?? .distantPast) > 180)
+        if silent {
             restartBartbeat()
-            return
         }
 
+        // Keep trying to recover when a known phone/pad hasn't synced recently,
+        // even if bartbeat is still emitting non-battery noise (connected/etc).
+        let ud = UserDefaults.standard
+        let phoneSyncAge = (ud.object(forKey: "phone.lastSyncTime") as? Date)
+            .map { now.timeIntervalSince($0) }
+        let padSyncAge = (ud.object(forKey: "pad.lastSyncTime") as? Date)
+            .map { now.timeIntervalSince($0) }
+        if !silent, (phoneSyncAge ?? 0) > deviceTimeout || (padSyncAge ?? 0) > deviceTimeout {
+            restartBartbeat()
+        }
+
+        let phoneStale = lastPhoneSuccess.map { now.timeIntervalSince($0) > deviceTimeout } ?? false
+        let padStale   = lastPadSuccess.map   { now.timeIntervalSince($0) > deviceTimeout } ?? false
+
         // Watch: hide after 30 minutes without a successful query
-        if let t = lastWatchSuccess, now.timeIntervalSince(t) > 1800 {
+        if let t = lastWatchSuccess, now.timeIntervalSince(t) > deviceTimeout {
             lastWatchSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(nil) }
         }
 
         // iPhone / iPad: hide after 30 minutes
-        let deviceTimeout: TimeInterval = 1800
-        if let t = lastPhoneSuccess, now.timeIntervalSince(t) > deviceTimeout {
+        if phoneStale {
             lastPhoneSuccess = nil
-            phoneUDID = nil
             lastWatchSuccess = nil
             DispatchQueue.main.async { [weak self] in
                 self?.onPhoneUpdate?(nil, nil, nil)
                 self?.onWatchUpdate?(nil)
             }
         }
-        if let t = lastPadSuccess, now.timeIntervalSince(t) > deviceTimeout {
+        if padStale {
             lastPadSuccess = nil
             DispatchQueue.main.async { [weak self] in self?.onPadUpdate?(nil, nil, nil) }
         }
