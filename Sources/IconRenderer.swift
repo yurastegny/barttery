@@ -13,9 +13,16 @@ func renderBatteryIcon(level: Int, state: ChargeState) -> NSImage {
     let symGap: CGFloat = hasSymbol ? 1   : 0
 
     let bodyH: CGFloat   = 13
-    let minHPad: CGFloat = (text.count == 2 ? 4 : 3) - (hasSymbol ? 2 : 0)
     let contentW = tSize.width + symGap + symW
-    let bodyW    = contentW + minHPad * 2
+    // Single-digit levels (1–9%) get a fixed body width so the icon doesn't
+    // jump in size when a charging/pause symbol appears or disappears.
+    let bodyW: CGFloat
+    if text.count == 1 {
+        bodyW = 23
+    } else {
+        let minHPad: CGFloat = (text.count == 2 ? 4 : 3) - (hasSymbol ? 2 : 0)
+        bodyW = contentW + minHPad * 2
+    }
     let radius: CGFloat  = 3.5
     let nubGap: CGFloat  = 1
     let nubW: CGFloat    = 2
