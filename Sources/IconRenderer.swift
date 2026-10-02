@@ -19,6 +19,8 @@ func renderBatteryIcon(level: Int, state: ChargeState) -> NSImage {
     let bodyW: CGFloat
     if text.count == 1 {
         bodyW = 23
+    } else if text.count == 2 && !hasSymbol {
+        bodyW = 25
     } else {
         let minHPad: CGFloat = (text.count == 2 ? 4 : 3) - (hasSymbol ? 2 : 0)
         bodyW = contentW + minHPad * 2
