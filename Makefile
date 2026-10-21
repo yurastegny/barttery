@@ -18,10 +18,10 @@ build:
 	@chmod +x $(CONTENTS)/MacOS/$(APP)
 	@cp Info.plist $(CONTENTS)/
 	@cp AppIcon.icns $(CONTENTS)/Resources/
-	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat $(CONTENTS)/Resources/
+	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat Sources/Resources/mobilebeat $(CONTENTS)/Resources/
 	@cp Sources/Resources/lib/*.dylib $(CONTENTS)/Resources/
-	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat
-	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat; do \
+	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat $(CONTENTS)/Resources/mobilebeat
+	@for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat $(CONTENTS)/Resources/mobilebeat; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" "$$f"; \
 	done; \
 	codesign --force --sign "$(SIGN)" --entitlements Barttery.entitlements $(BUNDLE)
@@ -49,6 +49,7 @@ dmg: build
 	         $$STAGEAPP/Contents/Resources/ideviceinfo \
 	         $$STAGEAPP/Contents/Resources/comptest \
 	         $$STAGEAPP/Contents/Resources/bartbeat \
+	         $$STAGEAPP/Contents/Resources/mobilebeat \
 	         $$STAGEAPP/Contents/MacOS/Barttery; do \
 	  [ -f "$$f" ] && codesign --force --sign - "$$f"; \
 	done; \
@@ -69,5 +70,13 @@ bartbeat:
 		-arch arm64
 	@echo "=> Built bartbeat"
 
+mobilebeat:
+	clang -o Sources/Resources/mobilebeat bridge/mobilebeat.c \
+		-framework CoreFoundation \
+		-F/Library/Apple/System/Library/PrivateFrameworks \
+		-framework MobileDevice \
+		-arch arm64
+	@echo "=> Built mobilebeat"
+
 clean:
-	rm -rf .build $(BUNDLE) Sources/Resources/bartbeat
+	rm -rf .build $(BUNDLE) Sources/Resources/bartbeat Sources/Resources/mobilebeat

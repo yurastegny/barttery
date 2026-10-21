@@ -7,8 +7,9 @@ struct WatchBattery {
     let isCharging: Bool
 }
 
-// Reads iPhone/iPad battery via bartbeat (persistent libimobiledevice daemon with heartbeat)
-// and Apple Watch battery via comptest.
+// Reads iPhone/iPad battery via bartbeat (legacy libimobiledevice transport)
+// plus mobilebeat (Apple CoreDevice/RemotePairing transport), and Apple Watch
+// battery via bartbeat/comptest when the paired iPhone transport supports it.
 class IDeviceReader: NSObject {
     var onPhoneUpdate: ((Int?, Bool?, String?) -> Void)?
     var onPadUpdate:   ((Int?, Bool?, String?) -> Void)?
@@ -17,6 +18,7 @@ class IDeviceReader: NSObject {
     private var binDir = ""
     private var libDir = ""
     private var bartbeat: Process?
+    private var mobilebeat: Process?
     private var staleTimer: Timer?
     private var lastPhoneSuccess: Date?
     private var lastPadSuccess:   Date?
@@ -31,6 +33,7 @@ class IDeviceReader: NSObject {
         libDir = resURL.path
         prepareBinaries()
         launchBartbeat()
+        launchMobilebeat()
         // Seed success timestamps from UserDefaults so the stale check works for
         // values restored from cache before any live bartbeat update arrives.
         let ud = UserDefaults.standard
@@ -115,6 +118,42 @@ class IDeviceReader: NSObject {
 
         try? proc.run()
         bartbeat = proc
+    }
+
+    /// Apple's MobileDevice.framework sees modern CoreDevice/RemotePairing
+    /// devices that libimobiledevice cannot discover over Wi-Fi.
+    private func launchMobilebeat() {
+        if let proc = mobilebeat, proc.isRunning { return }
+        let path = (binDir as NSString).appendingPathComponent("mobilebeat")
+        guard FileManager.default.fileExists(atPath: path) else { return }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = errPipe
+        proc.standardInput = inPipe
+
+        var lineBuf = ""
+        outPipe.fileHandleForReading.readabilityHandler = { [weak self] h in
+            guard let chunk = String(data: h.availableData, encoding: .utf8) else { return }
+            lineBuf += chunk
+            while let nl = lineBuf.firstIndex(of: "\n") {
+                let line = String(lineBuf[lineBuf.startIndex..<nl])
+                lineBuf.removeSubrange(lineBuf.startIndex...nl)
+                if !line.isEmpty { self?.handle(line: line) }
+            }
+        }
+        errPipe.fileHandleForReading.readabilityHandler = { h in _ = h.availableData }
+        proc.terminationHandler = { [weak self] _ in
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                self?.launchMobilebeat()
+            }
+        }
+        try? proc.run()
+        mobilebeat = proc
     }
 
     private func handle(line: String) {
@@ -279,7 +318,7 @@ class IDeviceReader: NSObject {
 
     private func prepareBinaries() {
         let fm = FileManager.default
-        for name in ["bartbeat", "comptest"] {
+        for name in ["bartbeat", "mobilebeat", "comptest"] {
             let path = (binDir as NSString).appendingPathComponent(name)
             try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
         }

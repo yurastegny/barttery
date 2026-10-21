@@ -323,6 +323,8 @@ static void *hb_manager_run(void *p) {
 
 typedef struct {
     char             udid[256];
+    enum idevice_options lookup; /* transport used by this worker */
+    volatile int     network_seen; /* Wi-Fi endpoint is available */
     volatile int     alive;
     volatile int     in_use;
     volatile time_t  startTime;  /* unix time when thread was created */
@@ -336,6 +338,9 @@ typedef struct {
 
 static Dev              devs[MAX_DEVS];
 static pthread_mutex_t  devs_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile int     g_stop = 0;
+
+static void connect_udid(const char *udid, enum idevice_options lookup);
 
 /* ── Watch query thread — runs independently of the battery poll loop ────── */
 
@@ -367,8 +372,7 @@ static void *dev_run(void *p) {
 
     dbg("connecting to %s", su);
 
-    idevice_error_t ierr = idevice_new_with_options(&device, dev->udid,
-            IDEVICE_LOOKUP_NETWORK | IDEVICE_LOOKUP_USBMUX);
+    idevice_error_t ierr = idevice_new_with_options(&device, dev->udid, dev->lookup);
     if (ierr != IDEVICE_E_SUCCESS) {
         dbg("idevice_new error %d for %s", (int)ierr, su);
         goto out;
@@ -473,24 +477,38 @@ out:
     snprintf(buf, sizeof buf, "{\"type\":\"disconnected\",\"udid\":\"%s\"}", su);
     emit(buf);
 
+    /* A device can be advertised by usbmuxd twice (USB and Wi-Fi) with the
+     * same UDID.  If the USB cable goes away, immediately create a network
+     * worker instead of waiting for another add event that may never arrive. */
+    int reconnect_network = dev->network_seen;
+    char reconnect_udid[sizeof dev->udid];
+    memcpy(reconnect_udid, dev->udid, sizeof reconnect_udid);
     pthread_mutex_lock(&devs_lock);
     dev->in_use = 0;
     pthread_mutex_unlock(&devs_lock);
+    if (reconnect_network && !g_stop)
+        connect_udid(reconnect_udid, IDEVICE_LOOKUP_NETWORK);
     return NULL;
 }
 
 /* ── connect a UDID (shared helper for events + scan) ───────────────────── */
 
-static void connect_udid(const char *udid) {
+static void connect_udid(const char *udid, enum idevice_options lookup) {
     pthread_mutex_lock(&devs_lock);
-    /* skip if already tracked */
-    for (int i = 0; i < MAX_DEVS; i++)
-        if (devs[i].in_use && strcmp(devs[i].udid, udid) == 0) goto done;
+    /* Keep note of the network endpoint even while USB owns the worker. */
+    for (int i = 0; i < MAX_DEVS; i++) {
+        if (devs[i].in_use && strcmp(devs[i].udid, udid) == 0) {
+            if (lookup == IDEVICE_LOOKUP_NETWORK) devs[i].network_seen = 1;
+            goto done;
+        }
+    }
     /* find a free slot */
     for (int i = 0; i < MAX_DEVS; i++) {
         if (!devs[i].in_use) {
             memset(&devs[i], 0, sizeof devs[i]);
             strncpy(devs[i].udid, udid, sizeof(devs[i].udid) - 1);
+            devs[i].lookup = lookup;
+            devs[i].network_seen = (lookup == IDEVICE_LOOKUP_NETWORK);
             devs[i].alive     = devs[i].in_use = 1;
             devs[i].startTime = time(NULL);
             pthread_create(&devs[i].thread, NULL, dev_run, &devs[i]);
@@ -507,23 +525,28 @@ done:
 static void on_ev(const usbmuxd_event_t *ev, void *ud) {
     (void)ud;
     if (ev->event == UE_DEVICE_ADD) {
-        connect_udid(ev->device.udid);
+        enum idevice_options lookup = ev->device.conn_type == CONNECTION_TYPE_NETWORK
+            ? IDEVICE_LOOKUP_NETWORK : IDEVICE_LOOKUP_USBMUX;
+        connect_udid(ev->device.udid, lookup);
     } else if (ev->event == UE_DEVICE_REMOVE) {
-        /* Ignore Wi-Fi (NETWORK) removes — those are transient.
-         * Only a USB remove means the device is truly gone. */
-        if (ev->device.conn_type == CONNECTION_TYPE_USB) {
-            pthread_mutex_lock(&devs_lock);
-            for (int i = 0; i < MAX_DEVS; i++)
-                if (devs[i].in_use && strcmp(devs[i].udid, ev->device.udid) == 0)
-                    { devs[i].alive = 0; break; }
-            pthread_mutex_unlock(&devs_lock);
+        pthread_mutex_lock(&devs_lock);
+        for (int i = 0; i < MAX_DEVS; i++) {
+            if (!devs[i].in_use || strcmp(devs[i].udid, ev->device.udid) != 0) continue;
+            if (ev->device.conn_type == CONNECTION_TYPE_NETWORK)
+                devs[i].network_seen = 0;
+            /* Only stop a worker when the transport it actually uses vanished. */
+            if ((ev->device.conn_type == CONNECTION_TYPE_USB &&
+                 devs[i].lookup == IDEVICE_LOOKUP_USBMUX) ||
+                (ev->device.conn_type == CONNECTION_TYPE_NETWORK &&
+                 devs[i].lookup == IDEVICE_LOOKUP_NETWORK))
+                devs[i].alive = 0;
+            break;
         }
+        pthread_mutex_unlock(&devs_lock);
     }
 }
 
 /* ── periodic scan (fallback for missed events / reconnect after failure) ── */
-
-static volatile int g_stop = 0;
 
 static void *scan_run(void *p) {
     (void)p;
@@ -558,7 +581,11 @@ static void *scan_run(void *p) {
 
         usbmuxd_device_info_t *list = NULL;
         int n = usbmuxd_get_device_list(&list);
-        for (int i = 0; i < n; i++) connect_udid(list[i].udid);
+        for (int i = 0; i < n; i++) {
+            enum idevice_options lookup = list[i].conn_type == CONNECTION_TYPE_NETWORK
+                ? IDEVICE_LOOKUP_NETWORK : IDEVICE_LOOKUP_USBMUX;
+            connect_udid(list[i].udid, lookup);
+        }
         usbmuxd_device_list_free(&list);
     }
     return NULL;
@@ -578,7 +605,11 @@ int main(void) {
         usbmuxd_device_info_t *list = NULL;
         int n = usbmuxd_get_device_list(&list);
         dbg("initial scan: %d device(s)", n);
-        for (int i = 0; i < n; i++) connect_udid(list[i].udid);
+        for (int i = 0; i < n; i++) {
+            enum idevice_options lookup = list[i].conn_type == CONNECTION_TYPE_NETWORK
+                ? IDEVICE_LOOKUP_NETWORK : IDEVICE_LOOKUP_USBMUX;
+            connect_udid(list[i].udid, lookup);
+        }
         usbmuxd_device_list_free(&list);
     }
 
