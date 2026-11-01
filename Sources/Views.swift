@@ -80,6 +80,7 @@ struct MenuContentView: View {
                 Spacer()
                 Button {
                     monitor.refresh()
+                    WidgetSnapshotPublisher.reloadAllWidgets()
                 } label: {
                     Text("Refresh")
                         .font(.system(size: 14, weight: .regular))

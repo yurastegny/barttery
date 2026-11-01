@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var widgetPublisher: WidgetSnapshotPublisher?
+
+    func connectWidgets(to monitor: DeviceBatteryMonitor) {
+        guard widgetPublisher == nil else { return }
+        widgetPublisher = WidgetSnapshotPublisher(monitor: monitor)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
     }
@@ -27,6 +34,7 @@ struct BartteryApp: App {
                 .onDisappear { monitor.onPopupClose() }
         } label: {
             MenuBarLabel(monitor: monitor)
+                .onAppear { appDelegate.connectWidgets(to: monitor) }
         }
         .menuBarExtraStyle(.window)
     }

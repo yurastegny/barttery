@@ -3,7 +3,7 @@ import Foundation
 import IOKit
 import IOKit.hid
 
-// Reads battery level and charging state from Logitech MX mice via HID++ 2.0.
+// Reads battery level and charging state from supported Logitech devices via HID++ 2.0.
 // Uses IOKit in shared (non-exclusive) mode with Input Monitoring permission.
 // If permission is not granted the reader returns no results and BLEDeviceReader
 // serves as a fallback (discrete levels, trend-based charging).
@@ -11,11 +11,12 @@ import IOKit.hid
 class LogitechReader {
     var onUpdate: (([AccessoryBattery]) -> Void)?
     /// Called immediately after IOKit enumeration, before battery queries complete.
-    /// Provides the set of device names currently visible via HID++ so callers can
-    /// reserve those names and prevent other readers from racing in.
+    /// Provides visible device names so callers can remove disconnected devices.
+    /// Visibility alone must not suppress battery readings from fallback readers.
     var onDevicesFound: ((Set<String>) -> Void)?
     private var timer: Timer?
     private var lastKnownLevels: [String: Int] = [:]
+    private var isReading = false
 
     static let supportedPIDs: [Int: String] = [
         // MX Master
@@ -49,6 +50,7 @@ class LogitechReader {
     private static let skippedKey = "logitech.inputMonitoring.skipped"
 
     func startMonitoring() {
+        timer?.invalidate()
         let access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
         if access == kIOHIDAccessTypeUnknown,
            !UserDefaults.standard.bool(forKey: Self.skippedKey) {
@@ -57,12 +59,16 @@ class LogitechReader {
             }
         }
         readDevices()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.readDevices()
         }
     }
 
     private func requestPermissionWithExplanation() {
+        guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted else {
+            readDevices()
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Logitech Device Battery"
         alert.informativeText = "To monitor the battery level and charging status of Logitech devices, Input Monitoring permission is required. Skip this if you don't have any Logitech devices."
@@ -71,6 +77,7 @@ class LogitechReader {
         alert.alertStyle = .informational
         if alert.runModal() == .alertFirstButtonReturn {
             IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            readDevices()
         } else {
             UserDefaults.standard.set(true, forKey: Self.skippedKey)
         }
@@ -81,26 +88,35 @@ class LogitechReader {
     /// Seeds the fallback level for a device from an external source (e.g. BLE).
     /// Used so that charging state can be reported even before the first valid HID++ level read.
     func hintLevel(_ level: Int, forDevice name: String) {
-        if lastKnownLevels[name] == nil, level >= 5 {
+        if lastKnownLevels[name] == nil, (0...100).contains(level) {
             lastKnownLevels[name] = level
         }
     }
 
     private func readDevices() {
-        guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else { return }
+        guard !isReading else { return }
+        guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else {
+            onDevicesFound?([])
+            onUpdate?([])
+            return
+        }
+        isReading = true
         HIDPPEngine.readAll(
             supported: Self.supportedPIDs,
             lastKnownLevels: lastKnownLevels,
             onDevicesFound: { [weak self] names in self?.onDevicesFound?(names) },
             completion: { [weak self] items in
                 guard let self else { return }
-                for item in items where item.level >= 5 {
+                self.isReading = false
+                for item in items {
                     self.lastKnownLevels[item.name] = item.level
                 }
                 self.onUpdate?(items)
             }
         )
     }
+
+    deinit { timer?.invalidate() }
 }
 
 // MARK: - HID++ 2.0 engine
@@ -108,13 +124,11 @@ class LogitechReader {
 private final class ReportQueue {
     var reports: [Data] = []
 
-    func dequeue(featIdx: UInt8, fnSW: UInt8) -> Data? {
+    func dequeue(featIdx: UInt8, fnSW: UInt8) -> Result<Data, LogitechReplyError>? {
         for (i, r) in reports.enumerated() {
-            guard r.count >= 4 else { continue }
-            if r[0] == 0x11 && r[1] == 0xFF && r[2] == 0xFF { reports.remove(at: i); return nil }
-            if r[0] == 0x11 && r[1] == 0xFF && r[2] == featIdx && r[3] == fnSW {
+            if let reply = LogitechReply.match(r, feature: featIdx, function: fnSW) {
                 reports.remove(at: i)
-                return r.count > 4 ? Data(r.dropFirst(4)) : Data()
+                return reply
             }
         }
         return nil
@@ -129,15 +143,6 @@ private enum HIDPPEngine {
     private static let frameLen  = 20
     private static let timeout:  TimeInterval = 1.5
 
-    private static let features: [(code: UInt16, unified: Bool)] = [
-        (0x1004, true),
-        (0x1010, true),
-        (0x1000, false),
-    ]
-
-    private static let chargingUnified: Set<Int> = [1, 2]
-    private static let chargingLegacy:  Set<Int> = [1, 2, 3, 4]
-
     static func readAll(supported: [Int: String],
                         lastKnownLevels: [String: Int],
                         onDevicesFound: @escaping (Set<String>) -> Void,
@@ -145,7 +150,11 @@ private enum HIDPPEngine {
         Thread.detachNewThread {
             let mgr = IOHIDManagerCreate(kCFAllocatorDefault, 0)
             IOHIDManagerSetDeviceMatching(mgr, [kIOHIDVendorIDKey: vendorID] as CFDictionary)
-            IOHIDManagerOpen(mgr, 0)
+            guard IOHIDManagerOpen(mgr, 0) == kIOReturnSuccess else {
+                DispatchQueue.main.async { onDevicesFound([]); completion([]) }
+                return
+            }
+            defer { IOHIDManagerClose(mgr, 0) }
 
             guard let devSet = IOHIDManagerCopyDevices(mgr) else {
                 DispatchQueue.main.async { onDevicesFound([]); completion([]) }
@@ -189,8 +198,10 @@ private enum HIDPPEngine {
         let qPtr  = Unmanaged.passRetained(queue).toOpaque()
         defer { Unmanaged<ReportQueue>.fromOpaque(qPtr).release() }
 
-        var buf = [UInt8](repeating: 0, count: 64)
-        IOHIDDeviceRegisterInputReportCallback(dev, &buf, CFIndex(buf.count), { ctx, result, _, _, _, report, len in
+        // IOKit keeps this pointer until the callback is unregistered.
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
+        defer { buf.deallocate() }
+        IOHIDDeviceRegisterInputReportCallback(dev, buf, 64, { ctx, result, _, _, _, report, len in
             guard result == kIOReturnSuccess, len > 0, let ctx else { return }
             let q = Unmanaged<ReportQueue>.fromOpaque(ctx).takeUnretainedValue()
             q.reports.append(Data(bytes: report, count: len))
@@ -198,36 +209,16 @@ private enum HIDPPEngine {
 
         let rl = RunLoop.current.getCFRunLoop()
         IOHIDDeviceScheduleWithRunLoop(dev, rl, CFRunLoopMode.defaultMode.rawValue)
-        defer { IOHIDDeviceUnscheduleFromRunLoop(dev, rl, CFRunLoopMode.defaultMode.rawValue) }
+        defer {
+            IOHIDDeviceUnscheduleFromRunLoop(dev, rl, CFRunLoopMode.defaultMode.rawValue)
+            IOHIDDeviceRegisterInputReportCallback(dev, buf, 64, nil, nil)
+        }
 
-        for feat in features {
-            guard let featIdx = getFeatureIndex(dev: dev, queue: queue, code: feat.code) else { continue }
-
-            let fn: UInt8 = feat.unified ? 1 : 0
-            guard let resp = send(dev: dev, queue: queue, featIdx: featIdx, fn: fn) else { continue }
-
-            guard resp.count >= 3 else { continue }
-            let statusB  = Int(resp[2])
-            let charging = feat.unified ? chargingUnified.contains(statusB)
-                                        : chargingLegacy.contains(statusB)
-            let pct: Int
-            if !feat.unified && statusB == 3 {
-                pct = 100
-            } else if !feat.unified {
-                let raw = Int(resp[0])
-                if [5, 20, 50, 100].contains(raw) {
-                    pct = raw
-                } else if let knownLevel = lastKnownLevel {
-                    // Level is a transient garbage value; use last known with current charging state.
-                    return AccessoryBattery(name: name, level: knownLevel, charging: charging)
-                } else {
-                    continue
-                }
-            } else {
-                pct = Int(resp[0])
-            }
-            guard pct >= 5 else { continue }
-            return AccessoryBattery(name: name, level: min(100, pct), charging: charging)
+        for feat in LogitechBatteryFeature.allCases {
+            guard let featIdx = getFeatureIndex(dev: dev, queue: queue, code: feat.rawValue),
+                  let resp = send(dev: dev, queue: queue, featIdx: featIdx, fn: feat.function),
+                  let battery = feat.decode(resp, lastKnownLevel: lastKnownLevel) else { continue }
+            return AccessoryBattery(name: name, level: battery.level, charging: battery.charging)
         }
         return nil
     }
@@ -257,7 +248,9 @@ private enum HIDPPEngine {
         let deadline = Date(timeIntervalSinceNow: timeout)
         while Date() < deadline {
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-            if let data = queue.dequeue(featIdx: featIdx, fnSW: fnSW) { return data }
+            if let reply = queue.dequeue(featIdx: featIdx, fnSW: fnSW) {
+                return try? reply.get()
+            }
         }
         return nil
     }

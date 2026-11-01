@@ -6,6 +6,8 @@
  * Wi-Fi (including devices advertising a supportsRP Bonjour identity).
  */
 #include <CoreFoundation/CoreFoundation.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +39,7 @@ extern CFTypeRef AMDeviceCopyValue(am_device_t, CFStringRef, CFStringRef);
 extern int AMDeviceSecureStartService(am_device_t, CFStringRef, CFDictionaryRef, void **);
 extern uint64_t AMDServiceConnectionSendMessage(void *, CFPropertyListRef, CFPropertyListFormat);
 extern uint64_t AMDServiceConnectionReceiveMessage(void *, CFPropertyListRef *, CFPropertyListFormat *);
+extern int AMDServiceConnectionGetSocket(void *);
 extern void AMDServiceConnectionInvalidate(void *);
 
 typedef struct {
@@ -89,8 +92,21 @@ static CFPropertyListRef companion_command(am_device_t device, CFDictionaryRef c
     }
     CFPropertyListRef reply = NULL;
     CFPropertyListFormat format = kCFPropertyListBinaryFormat_v1_0;
-    AMDServiceConnectionSendMessage(connection, command, format);
-    AMDServiceConnectionReceiveMessage(connection, &reply, &format);
+    /* companion_proxy can stop replying after the phone changes transport.
+     * A blocking receive here stalls the MobileDevice run loop (including
+     * future Watch polls and device reconnect notifications). */
+    int socket = AMDServiceConnectionGetSocket(connection);
+    struct timeval timeout = { .tv_sec = 5, .tv_usec = 0 };
+    if (socket >= 0) {
+        setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
+    }
+    uint64_t sent = AMDServiceConnectionSendMessage(connection, command, format);
+    uint64_t received = sent == 0
+        ? AMDServiceConnectionReceiveMessage(connection, &reply, &format) : sent;
+    if (sent != 0 || received != 0)
+        fprintf(stderr, "companion_proxy: send=%llu receive=%llu\n",
+                (unsigned long long)sent, (unsigned long long)received);
     /* Invalidate alone does not close the socket: the connection is a CF object
      * that owns its fd until it is deallocated. Every companion_proxy query used
      * to leak one socket, so after a day or two the process held thousands of
@@ -209,20 +225,22 @@ static int poll_device(Dev *slot) {
         charging = dict_bool(battery, CFSTR("BatteryIsCharging"));
     }
 
+    const char *type = strcasecmp(klass, "iPad") == 0 ? "pad" : "phone";
     if (level >= 0) {
-        const char *type = strcasecmp(klass, "iPad") == 0 ? "pad" : "phone";
         printf("{\"type\":\"%s\",\"udid\":\"%s\",\"name\":\"%s\",\"level\":%d,\"charging\":%s}\n",
                type, safe_udid, safe_name, level, charging ? "true" : "false");
         fflush(stdout);
-        if (strcmp(type, "phone") == 0) poll_watch(device);
     }
+    /* The companion service can report a Watch even when the phone's battery
+     * domain is temporarily unavailable. Keep the two queries independent. */
+    if (strcmp(type, "phone") == 0) poll_watch(device);
 
     if (battery) CFRelease(battery);
     if (class_value) CFRelease(class_value);
     if (name_value) CFRelease(name_value);
     AMDeviceStopSession(device);
     AMDeviceDisconnect(device);
-    return level >= 0 ? 0 : -1;
+    return 0;
 }
 
 static void poll_all(CFRunLoopTimerRef timer, void *info) {

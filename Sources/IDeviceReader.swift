@@ -19,6 +19,8 @@ class IDeviceReader: NSObject {
     private var libDir = ""
     private var bartbeat: Process?
     private var mobilebeat: Process?
+    private var wifiwatch: Process?
+    private var wifiwatchUDID: String?
     private var staleTimer: Timer?
     private var lastPhoneSuccess: Date?
     private var lastPadSuccess:   Date?
@@ -34,6 +36,7 @@ class IDeviceReader: NSObject {
         prepareBinaries()
         launchBartbeat()
         launchMobilebeat()
+        launchWifiwatch()
         // Seed success timestamps from UserDefaults so the stale check works for
         // values restored from cache before any live bartbeat update arrives.
         let ud = UserDefaults.standard
@@ -156,8 +159,64 @@ class IDeviceReader: NSObject {
         mobilebeat = proc
     }
 
+    /// Reads the paired Watch over classic Wi-Fi lockdown, falling back to live
+    /// power-source events when the iPhone refuses companion_proxy requests.
+    private func launchWifiwatch() {
+        guard let udid = phoneUDID ?? UserDefaults.standard.string(forKey: "phone.lastUDID"),
+              !udid.isEmpty else { return }
+
+        if let proc = wifiwatch, proc.isRunning {
+            if wifiwatchUDID == udid { return }
+            proc.terminate()
+            wifiwatch = nil
+        }
+
+        let path = (binDir as NSString).appendingPathComponent("wifiwatch")
+        guard FileManager.default.fileExists(atPath: path) else { return }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = [udid]
+        proc.environment = ProcessInfo.processInfo.environment.merging(
+            ["DYLD_LIBRARY_PATH": libDir]
+        ) { _, new in new }
+
+        let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError  = errPipe
+        proc.standardInput  = inPipe
+
+        var lineBuf = ""
+        outPipe.fileHandleForReading.readabilityHandler = { [weak self] h in
+            guard let chunk = String(data: h.availableData, encoding: .utf8), !chunk.isEmpty else { return }
+            lineBuf += chunk
+            while let nl = lineBuf.firstIndex(of: "\n") {
+                let line = String(lineBuf[lineBuf.startIndex..<nl])
+                lineBuf.removeSubrange(lineBuf.startIndex...nl)
+                if !line.isEmpty { self?.handleJSON(line) }
+            }
+        }
+        errPipe.fileHandleForReading.readabilityHandler = { h in _ = h.availableData }
+
+        proc.terminationHandler = { [weak self] _ in
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                self?.launchWifiwatch()
+            }
+        }
+
+        try? proc.run()
+        wifiwatch = proc
+        wifiwatchUDID = udid
+    }
+
     private func handle(line: String) {
         lastBartbeatOutput = Date()
+        handleJSON(line)
+    }
+
+    private func handleJSON(_ line: String) {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
@@ -177,6 +236,7 @@ class IDeviceReader: NSObject {
                 if let name, !name.isEmpty { UserDefaults.standard.set(name, forKey: "phone.lastName") }
             }
             DispatchQueue.main.async { [weak self] in self?.onPhoneUpdate?(level, charging, name) }
+            launchWifiwatch()
 
         case "pad":
             let level    = json["level"] as? Int
@@ -194,14 +254,16 @@ class IDeviceReader: NSObject {
             if json["device_type"] as? String == "phone", let udid = json["udid"] as? String {
                 phoneUDID = udid
                 UserDefaults.standard.set(udid, forKey: "phone.lastUDID")
+                launchWifiwatch()
             }
 
         case "watch":
             let level    = json["level"] as? Int
-            let charging = json["charging"] as? Bool ?? false
+            let charging = json["charging"] as? Bool
+                ?? UserDefaults.standard.bool(forKey: "watch.lastCharging")
             let name     = json["name"] as? String
-            lastWatchSuccess = Date()
-            if let level {
+            if let level, (0...100).contains(level) {
+                lastWatchSuccess = Date()
                 UserDefaults.standard.set(level,      forKey: "watch.lastLevel")
                 UserDefaults.standard.set(charging,   forKey: "watch.lastCharging")
                 UserDefaults.standard.set(Date(),     forKey: "watch.lastSyncTime")
@@ -225,13 +287,43 @@ class IDeviceReader: NSObject {
 
     private func queryWatch(udid: String) {
         let out = run("comptest", [udid])
-        guard let watch = parseWatch(out) else { return }
+        if let watch = parseWatch(out) {
+            applyWatch(watch)
+            return
+        }
+        // Cable unplugged: read the Watch over Wi-Fi lockdown instead.
+        let wifi = run("wifiwatch", [udid, "--once"], timeout: 60)
+        if let watch = parseWatchJSON(wifi) {
+            applyWatch(watch)
+        }
+    }
+
+    private func applyWatch(_ watch: WatchBattery) {
         lastWatchSuccess = Date()
         UserDefaults.standard.set(watch.level,      forKey: "watch.lastLevel")
         UserDefaults.standard.set(watch.isCharging, forKey: "watch.lastCharging")
         UserDefaults.standard.set(watch.name,       forKey: "watch.lastName")
         UserDefaults.standard.set(Date(),           forKey: "watch.lastSyncTime")
         DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(watch) }
+    }
+
+    private func parseWatchJSON(_ output: String) -> WatchBattery? {
+        for line in output.components(separatedBy: "\n") {
+            guard line.hasPrefix("{"),
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["type"] as? String == "watch",
+                  let level = json["level"] as? Int,
+                  (0...100).contains(level) else { continue }
+            return WatchBattery(
+                name: json["name"] as? String
+                    ?? UserDefaults.standard.string(forKey: "watch.lastName") ?? "Apple Watch",
+                level: level,
+                isCharging: json["charging"] as? Bool
+                    ?? UserDefaults.standard.bool(forKey: "watch.lastCharging")
+            )
+        }
+        return nil
     }
 
     private func parseWatch(_ output: String) -> WatchBattery? {
@@ -302,10 +394,8 @@ class IDeviceReader: NSObject {
         // iPhone / iPad: hide after 30 minutes
         if phoneStale {
             lastPhoneSuccess = nil
-            lastWatchSuccess = nil
             DispatchQueue.main.async { [weak self] in
                 self?.onPhoneUpdate?(nil, nil, nil)
-                self?.onWatchUpdate?(nil)
             }
         }
         if padStale {
@@ -318,7 +408,7 @@ class IDeviceReader: NSObject {
 
     private func prepareBinaries() {
         let fm = FileManager.default
-        for name in ["bartbeat", "mobilebeat", "comptest"] {
+        for name in ["bartbeat", "mobilebeat", "wifiwatch", "comptest"] {
             let path = (binDir as NSString).appendingPathComponent(name)
             try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
         }

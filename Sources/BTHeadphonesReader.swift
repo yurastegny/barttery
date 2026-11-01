@@ -50,7 +50,7 @@ class BTHeadphonesReader: NSObject {
     }
 
     private func callIntSelector(_ obj: AnyObject, _ sel: Selector) -> Int? {
-        guard let imp = class_getMethodImplementation(type(of: obj) as! AnyClass, sel) else { return nil }
+        guard let imp = class_getMethodImplementation(type(of: obj), sel) else { return nil }
         typealias Fn = @convention(c) (AnyObject, Selector) -> Int32
         return Int(unsafeBitCast(imp, to: Fn.self)(obj, sel))
     }

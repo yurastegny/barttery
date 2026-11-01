@@ -1,0 +1,58 @@
+import XCTest
+@testable import Barttery
+
+final class LogitechBatteryTests: XCTestCase {
+    func testLegacyAcceptsContinuousAndCriticalPercentages() throws {
+        for level in [1, 4, 5, 37, 99, 100] {
+            let result = try XCTUnwrap(LogitechBatteryFeature.legacy.decode(Data([UInt8(level), 0, 0]), lastKnownLevel: 80))
+            XCTAssertEqual(result.level, level)
+            XCTAssertFalse(result.charging)
+        }
+    }
+
+    func testChargingStatusesForBothFeatures() throws {
+        for feature in LogitechBatteryFeature.allCases {
+            for status: UInt8 in 0...6 {
+                let result = try XCTUnwrap(feature.decode(Data([80, 0, status, 0]), lastKnownLevel: nil))
+                XCTAssertEqual(result.charging, [1, 2, 4].contains(status))
+                XCTAssertEqual(result.level, status == 3 ? 100 : 80)
+            }
+        }
+        XCTAssertEqual(LogitechBatteryFeature.unified.function, 1)
+        XCTAssertEqual(LogitechBatteryFeature.legacy.function, 0)
+        XCTAssertFalse(LogitechBatteryFeature.allCases.map(\.rawValue).contains(0x1010))
+    }
+
+    func testUnavailableAndMalformedLevels() throws {
+        let unified = LogitechBatteryFeature.unified
+        XCTAssertEqual(unified.decode(Data([0, 2, 1, 0]), lastKnownLevel: nil)?.level, 20)
+        XCTAssertEqual(LogitechBatteryFeature.legacy.decode(Data([0, 0, 1]), lastKnownLevel: 37)?.level, 37)
+        XCTAssertNil(unified.decode(Data([255, 0, 0, 0]), lastKnownLevel: 50))
+        XCTAssertNil(unified.decode(Data([50, 0]), lastKnownLevel: nil))
+        XCTAssertNil(unified.decode(Data([50, 0, 255, 0]), lastKnownLevel: nil))
+        XCTAssertNil(LogitechBatteryFeature.legacy.decode(Data([0, 0, 0]), lastKnownLevel: nil))
+    }
+
+    func testReplyMatchesOnlyOurRequest() throws {
+        let response = LogitechReply.match(Data([0x11, 0xFF, 5, 0x1A, 37, 0, 1]), feature: 5, function: 0x1A)
+        XCTAssertEqual(try XCTUnwrap(response).get(), Data([37, 0, 1]))
+        XCTAssertNil(LogitechReply.match(Data([0x11, 0xFF, 5, 0x10, 80]), feature: 5, function: 0x1A))
+        XCTAssertNil(LogitechReply.match(Data([0x11, 0xFF, 0xFF, 6, 0x1A, 2]), feature: 5, function: 0x1A))
+        let error = LogitechReply.match(Data([0x11, 0xFF, 0xFF, 5, 0x1A, 2]), feature: 5, function: 0x1A)
+        XCTAssertThrowsError(try XCTUnwrap(error).get())
+        let short = LogitechReply.match(Data([0x10, 0xFF, 5, 0x1A, 1, 2, 3]), feature: 5, function: 0x1A)
+        XCTAssertEqual(try XCTUnwrap(short).get(), Data([1, 2, 3]))
+    }
+
+    func testPartialUpdatesExpireAndDisconnectsRemoveCache() {
+        let now = Date(timeIntervalSince1970: 1000)
+        var cache = LogitechBatteryCache()
+        cache.record([AccessoryBattery(name: "Mouse", level: 50, charging: true),
+                      AccessoryBattery(name: "Keyboard", level: 80, charging: false)], at: now)
+        cache.record([AccessoryBattery(name: "Keyboard", level: 79, charging: false)], at: now.addingTimeInterval(90))
+        XCTAssertEqual(cache.current(at: now.addingTimeInterval(100)).count, 2)
+        XCTAssertEqual(cache.current(at: now.addingTimeInterval(120)).map(\.name), ["Keyboard"])
+        cache.retainVisible([])
+        XCTAssertTrue(cache.current(at: now.addingTimeInterval(121)).isEmpty)
+    }
+}

@@ -319,6 +319,34 @@ static void *hb_manager_run(void *p) {
     return NULL;
 }
 
+/* ── Wi-Fi transport ─────────────────────────────────────────────────────── */
+
+/* Apple's Wi-Fi transport refuses companion_proxy ("Starting services on
+ * wifi pairable refs is not supported"), so the Watch can only be read while
+ * the phone is on the classic wireless-sync transport used by libimobiledevice.
+ * Enable it once while the device is attached over USB. */
+static void enable_wifi_connections(idevice_t device) {
+    lockdownd_client_t ld = NULL;
+    if (lockdownd_client_new_with_handshake(device, &ld, "bartbeat-wifi") != LOCKDOWN_E_SUCCESS) {
+        dbg("wifi: lockdown handshake failed");
+        return;
+    }
+    plist_t value = NULL;
+    int enabled = 0;
+    if (lockdownd_get_value(ld, "com.apple.mobile.wireless_lockdown",
+                            "EnableWifiConnections", &value) == LOCKDOWN_E_SUCCESS && value) {
+        enabled = plist_bool_val_is_true(value);
+        plist_free(value);
+    }
+    if (!enabled) {
+        lockdownd_error_t err = lockdownd_set_value(
+            ld, "com.apple.mobile.wireless_lockdown", "EnableWifiConnections",
+            plist_new_bool(1));
+        dbg("wifi: EnableWifiConnections set, error %d", (int)err);
+    }
+    lockdownd_client_free(ld);
+}
+
 /* ── device slots ────────────────────────────────────────────────────────── */
 
 typedef struct {
@@ -398,6 +426,12 @@ static void *dev_run(void *p) {
         free(name);
         dbg("device: %s (%s)", sn, type);
     }
+
+    /* USB is the only transport where the setting can be changed. Doing so
+     * makes the phone advertise itself for wireless sync, which in turn lets
+     * the Watch companion service answer after the cable is unplugged. */
+    if (dev->lookup == IDEVICE_LOOKUP_USBMUX)
+        enable_wifi_connections(device);
 
     /* heartbeat manager — self-restarting thread, independent of battery poll.
      * Stored in dev->hb_thread so it can be cancelled when dev_run exits. */

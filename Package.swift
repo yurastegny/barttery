@@ -15,6 +15,11 @@ let package = Package(
                 .linkedFramework("IOBluetooth"),
                 .linkedFramework("IOKit")
             ]
+        ),
+        .testTarget(
+            name: "WidgetSnapshotTests",
+            dependencies: ["Barttery"],
+            path: "Tests/WidgetSnapshotTests"
         )
     ]
 )

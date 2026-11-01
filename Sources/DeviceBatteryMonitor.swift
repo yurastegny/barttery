@@ -4,6 +4,7 @@ import IOBluetooth
 
 class DeviceBatteryMonitor: ObservableObject {
     @Published var macBattery:    MacBattery?  = nil
+    private(set) var macBatteryUpdatedAt: Date?
     @Published var macName:       String       = Host.current().localizedName ?? "Mac"
     @Published var phoneBattery:  Int?         = cachedBattery("phone")
     @Published var phoneCharging: Bool         = false
@@ -55,9 +56,7 @@ class DeviceBatteryMonitor: ObservableObject {
     private var logiAccessories:  [AccessoryBattery] = []
     private var bleAccessories:   [AccessoryBattery] = []
     private var btHeadphones:     [AccessoryBattery] = []
-    // Names of devices currently visible via IOKit HID++, updated at the start of each refresh.
-    // Blocks BLE from racing in while battery queries are still running.
-    private var claimedByLogi:    Set<String>        = []
+    private var logiCache = LogitechBatteryCache()
     // BLE display name → canonical Logitech name, populated via PnP ID reads.
     // Used to suppress a BLE entry only when LogitechReader has actual battery data.
     private var bleLogiMapping:   [String: String]   = [:]
@@ -96,9 +95,11 @@ class DeviceBatteryMonitor: ObservableObject {
 
     func onPopupOpen() {
         let openTime = Date()
-        // Restart wedged bartbeat only when phone/watch data looks stale.
+        // Restart wedged bartbeat when either phone or Watch data looks stale.
         let phoneAge = syncTimes[BatteryDevice.phone.rawValue].map { openTime.timeIntervalSince($0) }
-        let needsKick = phoneAge.map { $0 > 120 } ?? (phoneBattery != nil)
+        let watchAge = syncTimes[BatteryDevice.watch.rawValue].map { openTime.timeIntervalSince($0) }
+        let needsKick = (phoneAge.map { $0 > 120 } ?? (phoneBattery != nil)) ||
+            (watchAge.map { $0 > 120 } ?? (watchBattery != nil))
         if needsKick {
             ideviceReader?.forceReconnect()
         }
@@ -126,8 +127,6 @@ class DeviceBatteryMonitor: ObservableObject {
         if let t = syncTimes[BatteryDevice.phone.rawValue], now.timeIntervalSince(t) > timeout {
             phoneBattery = nil
             syncTimes.removeValue(forKey: BatteryDevice.phone.rawValue)
-            watchBattery = nil
-            syncTimes.removeValue(forKey: BatteryDevice.watch.rawValue)
         }
         if let t = syncTimes[BatteryDevice.pad.rawValue], now.timeIntervalSince(t) > timeout {
             padBattery = nil
@@ -144,6 +143,7 @@ class DeviceBatteryMonitor: ObservableObject {
     private func setupMac() {
         let reader = MacBatteryReader()
         reader.onUpdate = { [weak self] battery in
+            self?.macBatteryUpdatedAt = battery == nil ? nil : Date()
             self?.macBattery = battery
             self?.rebuildIcon()
             if let battery = battery {
@@ -227,9 +227,11 @@ class DeviceBatteryMonitor: ObservableObject {
             self?.airPodsBattery = battery
             self?.airPodsConnected = reader.isConnected
             if let name = reader.deviceName { self?.airPodsName = name }
+            if battery != nil {
+                self?.syncTimes[BatteryDevice.airPods.rawValue] = Date()
+            }
             if let battery,
                let minLevel = [battery.left, battery.right].compactMap({ $0 }).min() {
-                self?.syncTimes[BatteryDevice.airPods.rawValue] = Date()
                 NotificationManager.shared.check(
                     device: .airPods,
                     level: minLevel,
@@ -265,7 +267,7 @@ class DeviceBatteryMonitor: ObservableObject {
             guard let self else { return }
             bleAccessories = items
             mergeAccessories()
-            let logiCanonical = Set(logiAccessories.map { $0.name }).union(claimedByLogi)
+            let logiCanonical = Set(logiAccessories.map { $0.name })
             for item in items {
                 let canonical = bleLogiMapping[item.name] ?? item.name
                 logiReader?.hintLevel(item.level, forDevice: canonical)
@@ -289,17 +291,13 @@ class DeviceBatteryMonitor: ObservableObject {
         let reader = LogitechReader()
         reader.onDevicesFound = { [weak self] names in
             guard let self else { return }
-            claimedByLogi = names
             // Drop cached data for devices that are no longer visible in IOKit.
-            logiAccessories = logiAccessories.filter { names.contains($0.name) }
+            logiCache.retainVisible(names)
             mergeAccessories()
         }
         reader.onUpdate = { [weak self] items in
             guard let self else { return }
-            // Keep last known values when query returns empty (e.g. device briefly
-            // unresponsive during charging). Stale entries are overwritten on next
-            // successful query; devices that truly disappear also leave claimedByLogi.
-            if !items.isEmpty { logiAccessories = items }
+            logiCache.record(items)
             mergeAccessories()
             for item in items {
                 syncTimes[item.batteryDevice.rawValue] = Date()
@@ -326,6 +324,7 @@ class DeviceBatteryMonitor: ObservableObject {
     }
 
     private func mergeAccessories() {
+        logiAccessories = logiCache.current()
         let appleNames = Set(appleAccessories.map { $0.name })
         let logiNames  = Set(logiAccessories.map { $0.name })
         let bleNames   = Set(bleAccessories.map { $0.name })
@@ -342,9 +341,10 @@ class DeviceBatteryMonitor: ObservableObject {
             if logiNames.contains(item.name)        { return false }
             if logiDisplayNames.contains(item.name) { return false }
             if ownedNames.contains(item.name)       { return false }
-            // Suppress when BLE confirmed Logitech via PnP ID and LogitechReader has/sees the device.
+            // Enumeration alone does not mean HID++ queries succeeded. Keep BLE
+            // fallback until we actually have a recent HID++ battery reading.
             if let canonical = bleLogiMapping[item.name],
-               logiNames.contains(canonical) || claimedByLogi.contains(canonical) { return false }
+               logiNames.contains(canonical) { return false }
             return true
         }
         let btOnly = btHeadphones.filter {
