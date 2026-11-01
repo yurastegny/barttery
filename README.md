@@ -6,6 +6,8 @@
 
 A macOS menu bar app that shows battery levels for all your devices in one place.
 
+Starting with version 1.2.0, Barttery is signed with Developer ID and notarized by Apple.
+
 ## Features
 
 - MacBook — battery percentage with charging state icon, time to full / time remaining, cycle count
