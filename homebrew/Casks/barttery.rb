@@ -8,7 +8,7 @@ cask "barttery" do
   homepage "https://github.com/yurastegny/barttery"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Barttery.app"
 end
