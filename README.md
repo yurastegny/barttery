@@ -57,29 +57,28 @@ Developer ID and notarized by Apple; no Gatekeeper exception is normally needed.
 ### Homebrew
 
 ```sh
-brew tap yurastegny/barttery https://github.com/yurastegny/barttery
-brew install --cask yurastegny/barttery/barttery
+brew install --cask yurastegny/tap/barttery
 ```
 
 If Homebrew reports that the cask is from an untrusted tap (Homebrew 7 and later),
 trust this specific cask, then repeat the install command:
 
 ```sh
-brew trust --cask yurastegny/barttery/barttery
+brew trust --cask yurastegny/tap/barttery
 ```
 
 To update a Homebrew-installed copy when a newer version is available:
 
 ```sh
 brew update
-brew upgrade --cask yurastegny/barttery/barttery
+brew upgrade --cask yurastegny/tap/barttery
 ```
 
-The cask is maintained in this repository at [`Casks/barttery.rb`](Casks/barttery.rb).
-The explicit repository URL in `brew tap` is required because this repository is
-named `barttery`, not `homebrew-barttery`.
-The previous `yurastegny/tap` remains available for existing installations; if you
-already use it, do not install a second copy from the new tap.
+Homebrew automatically adds the tap on first installation; no separate `brew tap`
+command is needed. The installation cask is maintained in
+[yurastegny/homebrew-tap](https://github.com/yurastegny/homebrew-tap).
+If you already installed Barttery through Homebrew, do not install a second copy
+from another tap.
 If Barttery is already installed manually, quit it and move the existing app out
 of Applications before installing through Homebrew. Do not delete your settings.
 
