@@ -93,6 +93,17 @@ version. In-app automatic updates are not implemented yet.
 Older, ad-hoc-signed releases may require the steps below. Developer ID-signed and
 notarized releases do not normally require a Gatekeeper exception.
 
+**macOS 13–14:** Control-click **Barttery** → **Open** → **Open**.
+
+**macOS 15 and later:**
+
+1. Double-click **Barttery**. You'll get a warning such as **"Apple could not verify "Barttery" is free of malware"** or **"Barttery" can't be opened because the developer cannot be verified**.
+2. Click **Done** — not **Move to Trash**.
+3. Open **System Settings → Privacy & Security** and scroll down to **Security**.
+4. Click **Open Anyway** next to the message that Barttery was blocked, then enter your password (or use Touch ID) and click **Open**.
+
+After this, macOS remembers the exception and the app launches normally.
+
 ## Desktop widget (macOS 14+)
 
 The published 1.2.0 DMG and Homebrew cask include the widget; no separate build or
