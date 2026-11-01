@@ -51,7 +51,8 @@ attached cable; a fully charged device is not marked as charging.
 
 ## Installation
 
-Version **1.2.0** includes the desktop widget. Both the app and DMG are signed with
+Version **1.2.1** includes Sparkle in-app updates, the desktop widget, and a Liquid
+Glass icon on macOS 26 and later. Both the app and DMG are signed with
 Developer ID and notarized by Apple; no Gatekeeper exception is normally needed.
 
 ### Homebrew
@@ -84,14 +85,17 @@ of Applications before installing through Homebrew. Do not delete your settings.
 
 ### Download the DMG
 
-- Download `Barttery-1.2.0.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
+- Download `Barttery-1.2.1.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
 - Open the DMG file
 - Drag the Barttery app to your Applications folder
 - Launch Barttery — it appears in the menu bar
 - On first launch, macOS may ask for Bluetooth and notification permissions — allow both
 
 For manual updates, quit Barttery and replace the app in Applications with the new
-version. In-app automatic updates are not implemented yet.
+version. Version 1.2.1 introduces Sparkle as described below. Users of 1.2.0 and
+earlier must update manually or through Homebrew once to enable future in-app
+updates. When a newer compatible release is detected, **Update Available…**
+appears below **Launch at Login**.
 
 ### Older, ad-hoc-signed releases
 
@@ -111,7 +115,7 @@ After this, macOS remembers the exception and the app launches normally.
 
 ## Desktop widget (macOS 14+)
 
-The published 1.2.0 DMG and Homebrew cask include the widget; no separate build or
+The published DMG and Homebrew cask include the widget; no separate build or
 installation is required. Launch Barttery from Applications, then right-click the
 desktop → **Edit Widgets** → search for **Barttery** and choose a layout. Keep
 Barttery running to provide fresh battery readings.
@@ -158,6 +162,96 @@ Checks without a signing account: `make widgets-check`, `swift test`, and
 `make widget-preview` (renders fresh, stale, and empty states into
 `.build/widget-preview.png`). An unsigned build only checks compilation; it does
 not verify widget registration or cross-process App Group access.
+
+### Application icons
+
+The Xcode build compiles `Icons/AppIcon.icon` for Liquid Glass on macOS 26 and
+later. Xcode also generates a static, backwards-compatible icon for macOS 13–15
+from the same design, including transparent margins, rounded corners, and a
+shadow. The system selects the representation independently of the update
+mechanism. Verify the final appearance in Finder on both older and newer macOS
+versions before release.
+
+The SwiftPM-only build still uses the existing `AppIcon.icns`; it does not compile
+Icon Composer resources. For the new icon and the widget, use the Xcode build.
+Icon changes require rebuilding, signing, and notarizing a new release. Never
+modify the resources inside an already signed application.
+
+## In-app updates (Sparkle)
+
+The Xcode build embeds Sparkle 2.10.1 in the host app, not the widget. It checks
+for signed updates approximately once a day. A deferred update adds **Update
+Available…** directly below **Launch at Login**. When no update is available, the
+row is absent. Clicking the row opens Sparkle's standard update window; scheduled
+checks do not open update windows, send update notifications, or automatically
+download and install updates. Once the user gives the update attention, the row
+is cleared; Sparkle controls subsequent reminders and skipped versions.
+
+The old GitHub-release notification checker is no longer started. Battery
+notifications are unaffected. SwiftPM-only builds intentionally do not embed or
+start Sparkle; distribute the Xcode archive to include updates, the widget, and
+the new icon.
+
+### Feed and signing key
+
+`project.yml` contains the public Ed25519 key and the permanent HTTPS feed URL:
+
+```text
+https://raw.githubusercontent.com/yurastegny/barttery/main/appcast.xml
+```
+
+The private key is stored only in the macOS login Keychain under the Sparkle
+account **`me.yura.barttery`**. Do not commit or upload it. Preserve it and make a
+secure backup before moving to another Mac. To display the existing public key
+without creating a replacement, use Sparkle's tool:
+
+```sh
+./bin/generate_keys --account me.yura.barttery -p
+```
+
+The root `appcast.xml` is the production update feed. Add a release entry only
+after its signed, notarized DMG is publicly available. Do not insert placeholder
+signatures or links to missing assets. Existing 1.2.0 installations need one
+manual or Homebrew update to gain Sparkle support.
+
+### Publishing a Sparkle update
+
+1. Increase `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`.
+   Sparkle compares **build numbers**, so the latter must increase every time.
+   The first Sparkle-enabled build is configured as **1.2.1 (5)**.
+2. Regenerate the Xcode project, Archive, and export using Developer ID / Direct
+   Distribution. Keep Sparkle's framework and helper signatures intact. Export
+   the notarized app with its widget, then package, sign, notarize, and staple the
+   final DMG. Do not use the SwiftPM-only `make dmg` for this release.
+3. Upload that exact DMG to its GitHub Release. Make sure its public download URL
+   works before publishing an appcast entry.
+4. Generate the appcast using the tools from the same Sparkle release. For
+   example, assuming the tools were unpacked into `.build/sparkle-tools`:
+
+   ```sh
+   mkdir -p .build/sparkle-updates/1.2.1
+   cp appcast.xml .build/sparkle-updates/1.2.1/
+   cp Notarized/1.2.1/Barttery-1.2.1.dmg .build/sparkle-updates/1.2.1/
+   .build/sparkle-tools/bin/generate_appcast \
+     --account me.yura.barttery \
+     --download-url-prefix https://github.com/yurastegny/barttery/releases/download/v1.2.1/ \
+     --maximum-deltas 0 \
+     .build/sparkle-updates/1.2.1/
+   ```
+
+   For subsequent releases, substitute the new version in paths and the URL.
+   Seed the staging directory with the current feed so previous entries retain
+   their existing download URLs. Put only finalized update archives in it.
+5. Review the generated `appcast.xml` for the correct version, build number,
+   download URL, size, and EdDSA signature; copy it to the repository root and
+   publish it to `main`. Never change the DMG after generating its signature.
+6. Test an actual update between two signed, notarized Sparkle-enabled builds,
+   using a separate test feed before publishing the production entry. Check the
+   reminder, update window, installation, relaunch, widget, and preserved settings.
+
+Apple notarization and Sparkle signatures are separate requirements; one does
+not replace the other. Updating through Homebrew remains supported, but do not
+run a Homebrew upgrade and a Sparkle installation at the same time.
 
 ## Signed releases outside the App Store
 
@@ -207,3 +301,6 @@ Barttery is licensed under the **GPL-2.0-or-later** license. The following third
 | [libplist](https://github.com/libimobiledevice/libplist) | LGPL-2.1+ |
 | [libusbmuxd](https://github.com/libimobiledevice/libusbmuxd) | LGPL-2.1+ |
 | [OpenSSL 3](https://github.com/openssl/openssl) (`libssl`, `libcrypto`) | Apache-2.0 |
+
+The Xcode build also embeds [Sparkle](https://github.com/sparkle-project/Sparkle),
+distributed under its [MIT license and third-party notices](https://github.com/sparkle-project/Sparkle/blob/2.10.1/LICENSE).

@@ -1,4 +1,5 @@
 .build/
+/Notarized/
 .swiftpm/
 *.xcodeproj/
 Barttery.app/

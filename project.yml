@@ -8,11 +8,15 @@ settings:
     DEVELOPMENT_TEAM: 4Y3FA3437G
     ENABLE_HARDENED_RUNTIME: YES
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.2.1"
+    CURRENT_PROJECT_VERSION: "5"
     CODE_SIGN_STYLE: Automatic
     # The bundled USB/Wi-Fi helpers are currently Apple Silicon only.
     ARCHS: arm64
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: "2.10.1"
 targets:
   Barttery:
     type: application
@@ -25,13 +29,15 @@ targets:
         excludes: [lib]
       - path: Sources/Resources/lib
         buildPhase: resources
-      - path: AppIcon.icns
+      - path: Icons/AppIcon.icon
         buildPhase: resources
     info:
       path: Widgets/Host-Info.plist
       properties:
         CFBundleDisplayName: Barttery
+        LSApplicationCategoryType: public.app-category.utilities
         CFBundleIconFile: AppIcon
+        CFBundleIconName: AppIcon
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
@@ -41,14 +47,25 @@ targets:
         NSBluetoothAlwaysUsageDescription: Used to display Bluetooth device battery levels
         NSInputMonitoringUsageDescription: Used to query Logitech battery level and charging state via HID++. You can deny this — the app will still show battery level via Bluetooth.
         BartteryWidgetsEnabled: true
+        BartterySparkleEnabled: true
+        SUFeedURL: https://raw.githubusercontent.com/yurastegny/barttery/main/appcast.xml
+        SUPublicEDKey: "7n76kfDOeMkLdGYHKynsMAFnQS/vHARwjQmMS01+qn4="
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAllowsAutomaticUpdates: false
+        SUAutomaticallyUpdate: false
+        SUSendProfileInfo: false
+        SUVerifyUpdateBeforeExtraction: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.yura.barttery
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Widgets/BartteryHost.entitlements
         ENABLE_APP_SANDBOX: NO
         # This phase modifies copied helper binaries with codesign.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
     dependencies:
+      - package: Sparkle
       - sdk: IOBluetooth.framework
       - sdk: IOKit.framework
       - target: BartteryWidget

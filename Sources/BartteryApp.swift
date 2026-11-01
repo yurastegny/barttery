@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        AppUpdater.shared.start()
     }
 }
 
@@ -22,7 +23,6 @@ struct BartteryApp: App {
     init() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             NotificationManager.shared.requestPermission()
-            UpdateChecker.checkIfNeeded()
         }
     }
 

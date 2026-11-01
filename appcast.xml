@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Barttery Updates</title>
+    <link>https://github.com/yurastegny/barttery</link>
+    <description>Signed updates for Barttery.</description>
+    <language>en</language>
+    <!-- Bootstrap feed: add a signed release with generate_appcast only after
+         its notarized DMG has been uploaded to GitHub Releases. -->
+  </channel>
+</rss>

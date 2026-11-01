@@ -30,6 +30,7 @@ struct MenuBarLabel: View {
 struct MenuContentView: View {
     @EnvironmentObject var monitor: DeviceBatteryMonitor
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var updater = AppUpdater.shared
     @State private var contentHeight: CGFloat = 0
 
     var body: some View {
@@ -136,6 +137,24 @@ struct MenuContentView: View {
             .font(.system(size: 14, weight: .regular))
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+
+            if updater.isUpdateAvailable {
+                Button {
+                    updater.showUpdate()
+                } label: {
+                    HStack {
+                        Text("Update Available…")
+                        Spacer()
+                        Image(systemName: "arrow.down.circle")
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 14, weight: .regular))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .disabled(!updater.canCheckForUpdates)
+            }
 
             Divider().padding(.horizontal, 16)
 
