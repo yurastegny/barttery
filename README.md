@@ -17,6 +17,7 @@ A macOS menu bar app that shows battery levels for all your devices in one place
 - Logitech keyboards — MX Keys, MX Keys Mini, MX Keys S, K380, K780, K850 — battery level via HID++ 2.0
 - Bluetooth headphones — battery level via Bluetooth
 - BLE devices — any Bluetooth LE peripheral with a standard Battery Service
+- Desktop widgets — battery rings and tables for macOS 14 and later
 
 Notifications — get alerted when any device drops to 20%, or reaches 80% / 100% while charging. Configure per device.
 
@@ -42,18 +43,52 @@ attached cable; a fully charged device is not marked as charging.
 
 ## Requirements
 
-- macOS 13 Ventura or later (including macOS 27)
+- Apple Silicon Mac (arm64) running macOS 13 Ventura or later (including macOS 27)
+- Desktop widgets require macOS 14 Sonoma or later
 - For iPhone / iPad / Apple Watch: connect via USB cable to Mac and enable Wi-Fi sync in Finder. On the first USB connection, you'll need to **Trust** the computer.
 
 ## Installation
 
-- Download the latest DMG file from the [releases page](https://github.com/yurastegny/barttery/releases)
+Version **1.2.0** includes the desktop widget. Both the app and DMG are signed with
+Developer ID and notarized by Apple; no Gatekeeper exception is normally needed.
+
+### Homebrew
+
+```sh
+brew tap yurastegny/tap
+brew install --cask yurastegny/tap/barttery
+```
+
+If Homebrew reports that the cask is from an untrusted tap (Homebrew 7 and later),
+trust this specific cask, then repeat the install command:
+
+```sh
+brew trust --cask yurastegny/tap/barttery
+```
+
+To update a Homebrew-installed copy when a newer version is available:
+
+```sh
+brew update
+brew upgrade --cask yurastegny/tap/barttery
+```
+
+The cask is maintained in [yurastegny/homebrew-tap](https://github.com/yurastegny/homebrew-tap).
+If Barttery is already installed manually, quit it and move the existing app out
+of Applications before installing through Homebrew. Do not delete your settings.
+
+### Download the DMG
+
+- Download `Barttery-1.2.0.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
 - Open the DMG file
 - Drag the Barttery app to your Applications folder
 - Launch Barttery — it appears in the menu bar
 - On first launch, macOS may ask for Bluetooth and notification permissions — allow both
 
-### How to run
+For manual updates, quit Barttery and replace the app in Applications with the new
+version. In-app automatic updates are not implemented yet.
+
+### Older, ad-hoc-signed releases
 
 Older, ad-hoc-signed releases may require the steps below. Developer ID-signed and
 notarized releases do not normally require a Gatekeeper exception.
@@ -70,6 +105,11 @@ notarized releases do not normally require a Gatekeeper exception.
 After this, macOS remembers the exception and the app launches normally.
 
 ## Desktop widget (macOS 14+)
+
+The published 1.2.0 DMG and Homebrew cask include the widget; no separate build or
+installation is required. Launch Barttery from Applications, then right-click the
+desktop → **Edit Widgets** → search for **Barttery** and choose a layout. Keep
+Barttery running to provide fresh battery readings.
 
 Barttery includes four WidgetKit variants: a small square with one device, a small
 square with four devices (2×2), the original medium rectangle with four devices,
