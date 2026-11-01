@@ -5,7 +5,22 @@
     <link>https://github.com/yurastegny/barttery</link>
     <description>Signed updates for Barttery.</description>
     <language>en</language>
-    <!-- Bootstrap feed: add a signed release with generate_appcast only after
-         its notarized DMG has been uploaded to GitHub Releases. -->
+    <item>
+      <title>1.2.1</title>
+      <pubDate>Sun, 01 Nov 2026 22:34:54 +0500</pubDate>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>1.2.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"><![CDATA[# Barttery 1.2.1
+
+- Adds Sparkle in-app updates. When an update is found, **Update Available…** appears below **Launch at Login**. Click it to review and install the update.
+- Adds a Liquid Glass application icon for macOS 26 and later, with a static fallback for older macOS versions.
+- Includes the desktop battery widget and existing Logitech battery monitoring improvements.
+
+Version 1.2.0 users must install this release manually or through Homebrew to enable future in-app updates.
+]]></description>
+      <enclosure url="https://github.com/yurastegny/barttery/releases/download/v1.2.1/Barttery-1.2.1.dmg" length="8789703" type="application/octet-stream" sparkle:edSignature="bp7LNFHiPv6huWdp9w6Fy093pTLUPaVR3Jy+vLdvVSID+HCVglLHASyvrzigCELAZTyZmaFjftk9UZ7PcZPVAg=="/>
+    </item>
   </channel>
 </rss>
