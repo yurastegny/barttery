@@ -511,7 +511,7 @@ struct AccessoryRow: View {
             }
 
             if expanded {
-                NotificationThresholdRow(device: accessory.batteryDevice)
+                NotificationThresholdRow(device: accessory.batteryDevice, accessory: accessory)
                     .padding(.leading, 38)
                     .padding(.top, -2)
                     .transition(.opacity)
@@ -524,8 +524,16 @@ struct AccessoryRow: View {
 
 struct NotificationThresholdRow: View {
     let device: BatteryDevice
+    var accessory: AccessoryBattery? = nil
     @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject private var monitor: DeviceBatteryMonitor
+
+    private var updatedAt: Date? {
+        // Never substitute another mouse/keyboard's timestamp for this device,
+        // including when its user-assigned Bluetooth name changes its category.
+        if let accessory { return accessory.updatedAt }
+        return monitor.syncTimes[device.rawValue]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -548,10 +556,12 @@ struct NotificationThresholdRow: View {
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                } else if let date = monitor.syncTimes[device.rawValue] {
-                    Text(syncElapsed(date))
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                } else if accessory != nil || updatedAt != nil {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(BatteryUpdateAge.text(since: updatedAt, at: context.date))
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             HStack(spacing: 6) {
@@ -649,11 +659,6 @@ private struct ThresholdButtonBody: View {
 
 
 // MARK: - Helpers
-
-private func syncElapsed(_ date: Date) -> String {
-    let mins = max(1, Int(Date().timeIntervalSince(date) / 60))
-    return "\(mins) min ago"
-}
 
 private func formatMinutes(_ minutes: Int) -> String {
     if minutes <= 1 { return "1 min" }

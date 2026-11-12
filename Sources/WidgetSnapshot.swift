@@ -47,7 +47,8 @@ struct WidgetBatteryDevice: Codable, Equatable, Identifiable {
     }
 
     func isStale(at date: Date) -> Bool {
-        date.timeIntervalSince(updatedAt) >= WidgetBatterySnapshot.staleInterval
+        let age = date.timeIntervalSince(updatedAt)
+        return !age.isFinite || age < -60 || age >= WidgetBatterySnapshot.staleInterval
     }
 }
 

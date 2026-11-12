@@ -375,7 +375,7 @@ class DeviceBatteryMonitor: ObservableObject {
         let sortedCandidates = candidates.sorted { ($0.name ?? "") < ($1.name ?? "") }
         return zip(sortedItems, sortedCandidates).map { item, btDev in
             guard let btName = btDev.name, btName != item.name else { return item }
-            return AccessoryBattery(name: btName, level: item.level, charging: item.charging, isApple: item.isApple)
+            return item.renamed(btName)
         }
     }
 
@@ -408,6 +408,6 @@ private func cachedAccessories() -> [AccessoryBattery] {
         guard let name = $0["name"] as? String,
               let level = $0["level"] as? Int
         else { return nil }
-        return AccessoryBattery(name: name, level: level, charging: false)
+        return AccessoryBattery(name: name, level: level, charging: false, updatedAt: t)
     }
 }

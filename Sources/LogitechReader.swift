@@ -218,7 +218,7 @@ private enum HIDPPEngine {
             guard let featIdx = getFeatureIndex(dev: dev, queue: queue, code: feat.rawValue),
                   let resp = send(dev: dev, queue: queue, featIdx: featIdx, fn: feat.function),
                   let battery = feat.decode(resp, lastKnownLevel: lastKnownLevel) else { continue }
-            return AccessoryBattery(name: name, level: battery.level, charging: battery.charging)
+            return AccessoryBattery(name: name, level: battery.level, charging: battery.charging, updatedAt: Date())
         }
         return nil
     }

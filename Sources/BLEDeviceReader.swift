@@ -20,6 +20,7 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     private var levels:          [UUID: Int]            = [:]
     private var previousLevels:  [UUID: Int]            = [:]
     private var chargingStates:  [UUID: Bool]           = [:]
+    private var measurementDates: [UUID: Date]         = [:]
 
     private static let battService   = CBUUID(string: "180F")
     private static let battCharUUID  = CBUUID(string: "2A19")
@@ -109,6 +110,7 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
+        guard error == nil else { return }
         if ch.uuid == Self.pnpIDCharUUID {
             // PnP ID layout: [vendorIDSource(1), vendorID(2 LE), productID(2 LE), productVersion(2)]
             if let data = ch.value, data.count >= 5 {
@@ -125,12 +127,16 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         }
 
         guard ch.uuid == Self.battCharUUID, let raw = ch.value?.first else { return }
-        let newLevel = Int(raw)
-        let id = p.identifier
+        guard recordBatteryLevel(Int(raw), for: p.identifier) else { return }
+        publish()
+    }
+
+    @discardableResult
+    func recordBatteryLevel(_ newLevel: Int, for id: UUID, at date: Date = Date()) -> Bool {
         // Reject obviously invalid readings: below 5% (device would disconnect before reaching
         // this level in practice) or an impossible sudden drop of >50 points in one reading.
-        guard newLevel >= 5 else { return }
-        if let prev = previousLevels[id], newLevel < prev - 50 { return }
+        guard (5...100).contains(newLevel) else { return false }
+        if let prev = previousLevels[id], newLevel < prev - 50 { return false }
         // Infer charging from trend: if level rose since the last reading, the device is charging.
         if let prev = previousLevels[id] {
             if newLevel > prev      { chargingStates[id] = true  }
@@ -138,7 +144,14 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         }
         previousLevels[id] = newLevel
         levels[id] = newLevel
-        publish()
+        measurementDates[id] = date
+        return true
+    }
+
+    func batteryReading(for id: UUID, name: String) -> AccessoryBattery? {
+        guard let level = levels[id] else { return nil }
+        return AccessoryBattery(name: name, level: level, charging: chargingStates[id] ?? false,
+                                updatedAt: measurementDates[id])
     }
 
     private func remove(_ id: UUID) {
@@ -147,14 +160,12 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         levels.removeValue(forKey: id)
         previousLevels.removeValue(forKey: id)
         chargingStates.removeValue(forKey: id)
+        measurementDates.removeValue(forKey: id)
     }
 
     private func publish() {
         let items = peripherals.values.compactMap { p -> AccessoryBattery? in
-            guard let level = levels[p.identifier] else { return nil }
-            let name = p.name ?? "Unknown Device"
-            let charging = chargingStates[p.identifier] ?? false
-            return AccessoryBattery(name: name, level: level, charging: charging)
+            batteryReading(for: p.identifier, name: p.name ?? "Unknown Device")
         }.sorted { $0.name < $1.name }
         onUpdate?(items)
     }

@@ -7,6 +7,13 @@ struct AccessoryBattery {
     let level: Int
     let charging: Bool
     var isApple: Bool = false
+    /// Time of this device's last successful battery read, not its last redraw.
+    var updatedAt: Date? = nil
+
+    func renamed(_ displayName: String) -> AccessoryBattery {
+        AccessoryBattery(name: displayName, level: level, charging: charging,
+                         isApple: isApple, updatedAt: updatedAt)
+    }
 
     private var isKeyboard: Bool {
         let lower = name.lowercased()
@@ -143,7 +150,8 @@ class AccessoryReader: NSObject {
                 let displayName = btNames[devAddr] ?? product
                 let flags = props["BatteryStatusFlags"] as? Int ?? 0
                 let charging = (flags & 2) != 0
-                seen[product] = AccessoryBattery(name: displayName, level: battery, charging: charging, isApple: true)
+                seen[product] = AccessoryBattery(name: displayName, level: battery, charging: charging,
+                                                 isApple: true, updatedAt: Date())
                 if !addr.isEmpty && devAddr == addr { found = true }
             }
         }

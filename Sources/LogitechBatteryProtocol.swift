@@ -46,7 +46,13 @@ struct LogitechBatteryCache {
     }
 
     mutating func record(_ items: [AccessoryBattery], at date: Date = Date()) {
-        for item in items { readings[item.name] = (item, date) }
+        for var item in items {
+            // Preserve an existing measurement date when retaining/merging a
+            // reading. A cache lookup must never make old data look fresh.
+            let measuredAt = item.updatedAt ?? date
+            item.updatedAt = measuredAt
+            readings[item.name] = (item, measuredAt)
+        }
     }
 
     func current(at date: Date = Date()) -> [AccessoryBattery] {

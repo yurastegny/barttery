@@ -39,6 +39,13 @@ battery level, so it cannot reliably detect a charging cable being plugged in or
 removed. The HID++ charging indicator represents active charging, not simply an
 attached cable; a fully charged device is not marked as charging.
 
+Last-update times belong to individual accessories, including after Bluetooth
+renaming, rather than to a shared mouse/keyboard category. A successful read of
+an unchanged percentage still counts as a new read; displaying cached values or
+receiving an update from another device does not. Unknown dates are shown as
+unknown instead of enormous elapsed-time counters. Widgets use the same per-device
+measurement timestamps.
+
 ## Screenshot
 
 <img src="./img/screen2.png" alt="Screenshot" width="549"/>

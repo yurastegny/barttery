@@ -96,9 +96,16 @@ extension DeviceBatteryMonitor {
                    updatedAt: syncTimes[BatteryDevice.watch.rawValue] ?? .distantPast)
         }
         for accessory in accessories {
-            append("accessory.\(accessory.name)", accessory.name, accessory.icon, accessory.level,
-                   accessory.charging, updatedAt: syncTimes[accessory.batteryDevice.rawValue] ?? .distantPast)
+            devices.append(WidgetBatteryDevice(accessory: accessory))
         }
         return WidgetBatterySnapshot(devices: devices, writtenAt: date)
+    }
+}
+
+extension WidgetBatteryDevice {
+    init(accessory: AccessoryBattery) {
+        self.init(id: "accessory.\(accessory.name)", name: accessory.name, symbol: accessory.icon,
+                  level: min(100, max(0, accessory.level)), isCharging: accessory.charging,
+                  updatedAt: accessory.updatedAt ?? .distantPast)
     }
 }
