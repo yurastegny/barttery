@@ -16,7 +16,6 @@ class IDeviceReader: NSObject {
     var onWatchUpdate: ((WatchBattery?) -> Void)?
 
     private var binDir = ""
-    private var libDir = ""
     private var bartbeat: Process?
     private var mobilebeat: Process?
     private var wifiwatch: Process?
@@ -32,8 +31,6 @@ class IDeviceReader: NSObject {
     func start() {
         guard let resURL = Bundle.main.resourceURL else { return }
         binDir = resURL.path
-        libDir = resURL.path
-        prepareBinaries()
         launchBartbeat()
         launchMobilebeat()
         launchWifiwatch()
@@ -86,9 +83,6 @@ class IDeviceReader: NSObject {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: path)
-        proc.environment = ProcessInfo.processInfo.environment.merging(
-            ["DYLD_LIBRARY_PATH": libDir]
-        ) { _, new in new }
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -177,9 +171,6 @@ class IDeviceReader: NSObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: path)
         proc.arguments = [udid]
-        proc.environment = ProcessInfo.processInfo.environment.merging(
-            ["DYLD_LIBRARY_PATH": libDir]
-        ) { _, new in new }
 
         let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
         proc.standardOutput = outPipe
@@ -406,23 +397,12 @@ class IDeviceReader: NSObject {
 
     // MARK: - Process helpers
 
-    private func prepareBinaries() {
-        let fm = FileManager.default
-        for name in ["bartbeat", "mobilebeat", "wifiwatch", "comptest"] {
-            let path = (binDir as NSString).appendingPathComponent(name)
-            try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
-        }
-    }
-
     @discardableResult
     private func run(_ binary: String, _ args: [String], timeout: TimeInterval = 10) -> String {
         let path = (binDir as NSString).appendingPathComponent(binary)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: path)
         proc.arguments = args
-        proc.environment = ProcessInfo.processInfo.environment.merging(
-            ["DYLD_LIBRARY_PATH": libDir]
-        ) { _, new in new }
         let out = Pipe(), err = Pipe()
         proc.standardOutput = out
         proc.standardError  = err

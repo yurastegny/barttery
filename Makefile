@@ -23,6 +23,7 @@ build:
 	@cp Sources/Resources/idevice_id Sources/Resources/ideviceinfo Sources/Resources/comptest Sources/Resources/bartbeat Sources/Resources/mobilebeat Sources/Resources/wifiwatch $(CONTENTS)/Resources/
 	@cp Sources/Resources/lib/*.dylib $(CONTENTS)/Resources/
 	@chmod +x $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat $(CONTENTS)/Resources/mobilebeat $(CONTENTS)/Resources/wifiwatch
+	@python3 scripts/prepare-device-helpers.py "$(CONTENTS)/Resources"
 	@set -e; for f in $(CONTENTS)/Resources/*.dylib $(CONTENTS)/Resources/idevice_id $(CONTENTS)/Resources/ideviceinfo $(CONTENTS)/Resources/comptest $(CONTENTS)/Resources/bartbeat $(CONTENTS)/Resources/mobilebeat $(CONTENTS)/Resources/wifiwatch; do \
 	  [ -f "$$f" ] && codesign --force --sign "$(SIGN)" $(SIGN_FLAGS) "$$f"; \
 	done; \

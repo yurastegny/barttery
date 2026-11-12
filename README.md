@@ -163,6 +163,29 @@ Checks without a signing account: `make widgets-check`, `swift test`, and
 `.build/widget-preview.png`). An unsigned build only checks compilation; it does
 not verify widget registration or cross-process App Group access.
 
+### Device helper packaging
+
+Device helpers and their dylibs are copied into `Contents/Resources`. Before
+signing, both build systems run `scripts/prepare-device-helpers.py` to rewrite
+all bundled dependencies, including transitive dylib dependencies, to
+`@loader_path/<library-name>`. Helpers must not rely on `DYLD_LIBRARY_PATH`,
+which Hardened Runtime ignores. The script changes only build-product copies;
+the source binaries remain untouched. It also sets executable permissions at
+build time, so the running app does not need to modify its own signed resources.
+
+To verify an exported/notarized app without modifying its signature:
+
+```sh
+python3 scripts/prepare-device-helpers.py --check /path/to/Barttery.app/Contents/Resources
+```
+
+Dependency closure, missing helpers, transitive libraries, build integration,
+and idempotency are covered by the Python regression tests:
+
+```sh
+python3 -m unittest discover -s Tests -p 'test_*.py'
+```
+
 ### Application icons
 
 The Xcode build compiles `Icons/AppIcon.icon` for Liquid Glass on macOS 26 and

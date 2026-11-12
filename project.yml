@@ -8,8 +8,8 @@ settings:
     DEVELOPMENT_TEAM: 4Y3FA3437G
     ENABLE_HARDENED_RUNTIME: YES
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.1"
-    CURRENT_PROJECT_VERSION: "5"
+    MARKETING_VERSION: "1.2.2"
+    CURRENT_PROJECT_VERSION: "6"
     CODE_SIGN_STYLE: Automatic
     # The bundled USB/Wi-Fi helpers are currently Apple Silicon only.
     ARCHS: arm64
@@ -75,6 +75,9 @@ targets:
       - name: Sign bundled device helpers
         basedOnDependencyAnalysis: false
         script: |
+          set -e
+          /usr/bin/python3 "${SRCROOT}/scripts/prepare-device-helpers.py" \
+            "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
           if [ "${CODE_SIGNING_ALLOWED}" != "NO" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY}" ]; then
             for name in idevice_id ideviceinfo comptest bartbeat mobilebeat wifiwatch *.dylib; do
               for file in "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"/$name; do
