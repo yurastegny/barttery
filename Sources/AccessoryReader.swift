@@ -5,14 +5,15 @@ import IOBluetooth
 struct AccessoryBattery {
     let name: String
     let level: Int
-    let charging: Bool
+    var charging: Bool
     var isApple: Bool = false
     /// Time of this device's last successful battery read, not its last redraw.
     var updatedAt: Date? = nil
+    var chargingKnown: Bool = true
 
     func renamed(_ displayName: String) -> AccessoryBattery {
         AccessoryBattery(name: displayName, level: level, charging: charging,
-                         isApple: isApple, updatedAt: updatedAt)
+                         isApple: isApple, updatedAt: updatedAt, chargingKnown: chargingKnown)
     }
 
     private var isKeyboard: Bool {

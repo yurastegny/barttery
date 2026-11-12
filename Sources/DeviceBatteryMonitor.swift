@@ -12,17 +12,7 @@ class DeviceBatteryMonitor: ObservableObject {
     @Published var padBattery:    Int?         = cachedBattery("pad")
     @Published var padCharging:   Bool         = false
     @Published var padName:       String       = UserDefaults.standard.string(forKey: "pad.lastName") ?? "iPad"
-    @Published var watchBattery:  WatchBattery? = {
-        let ud = UserDefaults.standard
-        guard let t = ud.object(forKey: "watch.lastSyncTime") as? Date,
-              Date().timeIntervalSince(t) < 1800 else { return nil }
-        guard let level = ud.object(forKey: "watch.lastLevel") as? Int, level >= 0 else { return nil }
-        return WatchBattery(
-            name:        ud.string(forKey: "watch.lastName") ?? "Apple Watch",
-            level:       level,
-            isCharging:  ud.bool(forKey: "watch.lastCharging")
-        )
-    }()
+    @Published var watchBattery:  WatchBattery? = WatchBattery.cached()
     @Published var menuBarIcon:   NSImage      = renderPlugIcon()
     @Published var syncTimes:     [String: Date] = {
         let ud = UserDefaults.standard
@@ -57,6 +47,7 @@ class DeviceBatteryMonitor: ObservableObject {
     private var bleAccessories:   [AccessoryBattery] = []
     private var btHeadphones:     [AccessoryBattery] = []
     private var logiCache = LogitechBatteryCache()
+    private var logiChargingCache = LogitechChargingCache()
     // BLE display name → canonical Logitech name, populated via PnP ID reads.
     // Used to suppress a BLE entry only when LogitechReader has actual battery data.
     private var bleLogiMapping:   [String: String]   = [:]
@@ -202,7 +193,7 @@ class DeviceBatteryMonitor: ObservableObject {
             DispatchQueue.main.async {
                 self?.watchBattery = watch
                 if let watch {
-                    self?.syncTimes[BatteryDevice.watch.rawValue] = Date()
+                    self?.syncTimes[BatteryDevice.watch.rawValue] = watch.updatedAt
                     NotificationManager.shared.check(
                         device: .watch,
                         level: watch.level,
@@ -254,7 +245,8 @@ class DeviceBatteryMonitor: ObservableObject {
             UserDefaults.standard.set(Date(), forKey: "accessories.lastSyncTime")
             for item in items {
                 syncTimes[item.batteryDevice.rawValue] = Date()
-                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
+                NotificationManager.shared.check(device: item.batteryDevice, level: item.level,
+                                                 isCharging: item.chargingKnown && item.charging)
             }
         }
         reader.startMonitoring()
@@ -269,11 +261,13 @@ class DeviceBatteryMonitor: ObservableObject {
             mergeAccessories()
             let logiCanonical = Set(logiAccessories.map { $0.name })
             for item in items {
-                let canonical = bleLogiMapping[item.name] ?? item.name
+                let canonical = bleLogiMapping[item.name] ?? LogitechReader.canonicalName(for: item.name) ?? item.name
                 logiReader?.hintLevel(item.level, forDevice: canonical)
                 guard !logiCanonical.contains(canonical) else { continue }
                 syncTimes[item.batteryDevice.rawValue] = Date()
-                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
+                let resolved = logiChargingCache.applying(to: item, canonicalName: canonical)
+                NotificationManager.shared.check(device: resolved.batteryDevice, level: resolved.level,
+                                                 isCharging: resolved.chargingKnown && resolved.charging)
             }
         }
         reader.onLogiConfirmed = { [weak self] bleName, pid in
@@ -293,6 +287,12 @@ class DeviceBatteryMonitor: ObservableObject {
             guard let self else { return }
             // Drop cached data for devices that are no longer visible in IOKit.
             logiCache.retainVisible(names)
+            logiChargingCache.retainVisible(names)
+            mergeAccessories()
+        }
+        reader.onChargingUpdate = { [weak self] readings in
+            guard let self else { return }
+            logiChargingCache.record(readings)
             mergeAccessories()
         }
         reader.onUpdate = { [weak self] items in
@@ -301,7 +301,8 @@ class DeviceBatteryMonitor: ObservableObject {
             mergeAccessories()
             for item in items {
                 syncTimes[item.batteryDevice.rawValue] = Date()
-                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: item.charging)
+                NotificationManager.shared.check(device: item.batteryDevice, level: item.level,
+                                                 isCharging: item.chargingKnown && item.charging)
             }
         }
         reader.startMonitoring()
@@ -316,7 +317,10 @@ class DeviceBatteryMonitor: ObservableObject {
             mergeAccessories()
             for item in items {
                 syncTimes[item.batteryDevice.rawValue] = Date()
-                NotificationManager.shared.check(device: item.batteryDevice, level: item.level, isCharging: false)
+                let canonical = LogitechReader.canonicalName(for: item.name) ?? item.name
+                let resolved = logiChargingCache.applying(to: item, canonicalName: canonical)
+                NotificationManager.shared.check(device: resolved.batteryDevice, level: resolved.level,
+                                                 isCharging: resolved.chargingKnown && resolved.charging)
             }
         }
         reader.startMonitoring()
@@ -354,7 +358,10 @@ class DeviceBatteryMonitor: ObservableObject {
             !bleNames.contains($0.name) &&
             !ownedNames.contains($0.name)
         }
-        accessories = (appleAccessories + logiOnly + bleOnly + btOnly).sorted { $0.name < $1.name }
+        accessories = (appleAccessories + logiOnly + bleOnly + btOnly).map { item in
+            let canonical = bleLogiMapping[item.name] ?? LogitechReader.canonicalName(for: item.name) ?? item.name
+            return logiChargingCache.applying(to: item, canonicalName: canonical)
+        }.sorted { $0.name < $1.name }
     }
 
     /// Renames Logitech items using connected IOBluetooth peripheral-class devices.
@@ -408,6 +415,6 @@ private func cachedAccessories() -> [AccessoryBattery] {
         guard let name = $0["name"] as? String,
               let level = $0["level"] as? Int
         else { return nil }
-        return AccessoryBattery(name: name, level: level, charging: false, updatedAt: t)
+        return AccessoryBattery(name: name, level: level, charging: false, updatedAt: t, chargingKnown: false)
     }
 }

@@ -3,6 +3,10 @@
 #include "../watchlog.h"
 
 int main(void) {
+    assert(watchlog_should_stream(0, 0));
+    assert(watchlog_should_stream(-1, 0));
+    assert(watchlog_should_stream(-1, 1));
+    assert(!watchlog_should_stream(0, 1));
     const char *prefix = "Oct 26 10:43:25 phone bluetoothd(CoreUtils)[106] <Notice>: "
         "Power source updated CBPowerSource Nm 'Apple Watch', AcCa Watch, Present yes, Battery ";
     char line[1024];

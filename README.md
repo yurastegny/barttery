@@ -34,10 +34,13 @@ the old Barttery entry in Input Monitoring and add the new app from Applications
 Keep the same bundle identifier and signing team for subsequent releases.
 
 If a HID++ query fails, recent readings are retained for up to two minutes, then
-available BLE readings are used instead. BLE charging is only inferred from rising
-battery level, so it cannot reliably detect a charging cable being plugged in or
-removed. The HID++ charging indicator represents active charging, not simply an
-attached cable; a fully charged device is not marked as charging.
+available BLE readings are used instead. BLE battery percentages alone cannot
+reliably detect a charging cable being plugged in or removed, so an unconfirmed
+charging state is shown without a charging icon, not inferred from a rising percentage.
+A HID++ charging-only response can supply the charging state while Bluetooth
+supplies the percentage. The HID++ charging indicator represents active charging, not simply an
+attached cable alone; the device's explicit full-on-charger status also keeps
+the lightning indicator visible, including at 100%.
 
 Last-update times belong to individual accessories, including after Bluetooth
 renaming, rather than to a shared mouse/keyboard category. A successful read of
@@ -45,6 +48,17 @@ an unchanged percentage still counts as a new read; displaying cached values or
 receiving an update from another device does not. Unknown dates are shown as
 unknown instead of enormous elapsed-time counters. Widgets use the same per-device
 measurement timestamps.
+
+Apple Watch charging uses live power-source observations, not an indefinitely
+cached companion-registry charging flag. An explicit unplug observation clears
+the charging indicator immediately. A charging observation without confirmation
+for three minutes loses its charging icon if the live event stream is unavailable.
+An uninterrupted live subscription retains the last observed state until the next
+transition; helper heartbeats track subscription health, not battery freshness.
+Internally missing state remains unknown, not confirmed discharging.
+Successful registry reads can refresh the percentage
+but do not extend the charging observation's lifetime. Background Wi-Fi monitoring
+listens for power events even when registry queries succeed.
 
 ## Screenshot
 

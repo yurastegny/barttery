@@ -5,6 +5,8 @@ struct WatchBattery {
     let name: String
     let level: Int
     let isCharging: Bool
+    var chargingKnown: Bool = true
+    var updatedAt: Date = Date()
 }
 
 // Reads iPhone/iPad battery via bartbeat (legacy libimobiledevice transport)
@@ -20,6 +22,7 @@ class IDeviceReader: NSObject {
     private var mobilebeat: Process?
     private var wifiwatch: Process?
     private var wifiwatchUDID: String?
+    private var isQueryingWatch = false
     private var staleTimer: Timer?
     private var lastPhoneSuccess: Date?
     private var lastPadSuccess:   Date?
@@ -27,6 +30,9 @@ class IDeviceReader: NSObject {
     private var phoneUDID: String?
     private var lastBartbeatOutput: Date?
     private var lastBartbeatRestart: Date?
+    private var watchChargingState = WatchChargingState(
+        observation: WatchChargingObservation.cached(), lastReading: WatchBattery.cached()
+    )
 
     func start() {
         guard let resURL = Bundle.main.resourceURL else { return }
@@ -41,7 +47,7 @@ class IDeviceReader: NSObject {
         if let t = ud.object(forKey: "pad.lastSyncTime") as? Date   { lastPadSuccess = t }
         if let t = ud.object(forKey: "watch.lastSyncTime") as? Date { lastWatchSuccess = t }
         phoneUDID = ud.string(forKey: "phone.lastUDID")
-        staleTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        staleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.checkStale()
         }
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -59,10 +65,13 @@ class IDeviceReader: NSObject {
 
     /// Re-query Watch via comptest. Phone/pad come from bartbeat's own poll loop.
     func scanNow() {
+        guard !isQueryingWatch else { return }
         let udid = phoneUDID ?? UserDefaults.standard.string(forKey: "phone.lastUDID")
         guard let udid else { return }
         phoneUDID = udid
+        isQueryingWatch = true
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            defer { DispatchQueue.main.async { [weak self] in self?.isQueryingWatch = false } }
             self?.queryWatch(udid: udid)
         }
     }
@@ -203,16 +212,29 @@ class IDeviceReader: NSObject {
     }
 
     private func handle(line: String) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handle(line: line) }
+            return
+        }
         lastBartbeatOutput = Date()
         handleJSON(line)
     }
 
     private func handleJSON(_ line: String) {
+        // All helpers can emit concurrently. Reconcile Watch state in one order
+        // on the main queue, not concurrently from several pipe callbacks.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handleJSON(line) }
+            return
+        }
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
 
         switch type {
+
+        case "watch-stream":
+            watchChargingState.streamHeartbeat(at: Date())
 
         case "phone":
             let level    = json["level"] as? Int
@@ -249,22 +271,21 @@ class IDeviceReader: NSObject {
             }
 
         case "watch":
-            let level    = json["level"] as? Int
-            let charging = json["charging"] as? Bool
-                ?? UserDefaults.standard.bool(forKey: "watch.lastCharging")
-            let name     = json["name"] as? String
-            if let level, (0...100).contains(level) {
-                lastWatchSuccess = Date()
-                UserDefaults.standard.set(level,      forKey: "watch.lastLevel")
-                UserDefaults.standard.set(charging,   forKey: "watch.lastCharging")
-                UserDefaults.standard.set(Date(),     forKey: "watch.lastSyncTime")
-                if let name, !name.isEmpty { UserDefaults.standard.set(name, forKey: "watch.lastName") }
-                let watch = WatchBattery(
-                    name:       name ?? UserDefaults.standard.string(forKey: "watch.lastName") ?? "Apple Watch",
-                    level:      level,
-                    isCharging: charging
-                )
-                DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(watch) }
+            guard let level = json["level"] as? Int, (0...100).contains(level) else { return }
+            let reportedCharging = json["charging"] as? Bool
+            let isPowerEvent = json["source"] as? String == "wifi-power-event"
+            let now = Date()
+            let reading = WatchBattery(
+                name: json["name"] as? String ?? UserDefaults.standard.string(forKey: "watch.lastName") ?? "Apple Watch",
+                level: level, isCharging: reportedCharging ?? false, updatedAt: now
+            )
+            if let watch = watchChargingState.receive(reading, powerEvent: isPowerEvent,
+                                                      reportedCharging: reportedCharging, at: now) {
+                if isPowerEvent, let observation = watchChargingState.observation {
+                    UserDefaults.standard.set(observation.charging, forKey: "watch.lastPowerEventCharging")
+                    UserDefaults.standard.set(observation.observedAt, forKey: "watch.lastPowerEventDate")
+                }
+                publishWatch(watch)
             }
 
         case "disconnected":
@@ -284,21 +305,29 @@ class IDeviceReader: NSObject {
         }
         // Cable unplugged: read the Watch over Wi-Fi lockdown instead.
         let wifi = run("wifiwatch", [udid, "--once"], timeout: 60)
-        if let watch = parseWatchJSON(wifi) {
-            applyWatch(watch)
-        }
+        applyWatchJSON(wifi)
     }
 
     private func applyWatch(_ watch: WatchBattery) {
-        lastWatchSuccess = Date()
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.applyWatch(watch) }
+            return
+        }
+        if let watch = watchChargingState.receive(watch, powerEvent: false, reportedCharging: nil, at: Date()) {
+            publishWatch(watch)
+        }
+    }
+
+    private func publishWatch(_ watch: WatchBattery) {
+        lastWatchSuccess = watch.updatedAt
         UserDefaults.standard.set(watch.level,      forKey: "watch.lastLevel")
         UserDefaults.standard.set(watch.isCharging, forKey: "watch.lastCharging")
         UserDefaults.standard.set(watch.name,       forKey: "watch.lastName")
-        UserDefaults.standard.set(Date(),           forKey: "watch.lastSyncTime")
-        DispatchQueue.main.async { [weak self] in self?.onWatchUpdate?(watch) }
+        UserDefaults.standard.set(watch.updatedAt, forKey: "watch.lastSyncTime")
+        onWatchUpdate?(watch)
     }
 
-    private func parseWatchJSON(_ output: String) -> WatchBattery? {
+    private func applyWatchJSON(_ output: String) {
         for line in output.components(separatedBy: "\n") {
             guard line.hasPrefix("{"),
                   let data = line.data(using: .utf8),
@@ -306,15 +335,10 @@ class IDeviceReader: NSObject {
                   json["type"] as? String == "watch",
                   let level = json["level"] as? Int,
                   (0...100).contains(level) else { continue }
-            return WatchBattery(
-                name: json["name"] as? String
-                    ?? UserDefaults.standard.string(forKey: "watch.lastName") ?? "Apple Watch",
-                level: level,
-                isCharging: json["charging"] as? Bool
-                    ?? UserDefaults.standard.bool(forKey: "watch.lastCharging")
-            )
+            // Keep source/charging metadata from one-shot power events too;
+            // converting to a registry WatchBattery would discard its authority.
+            handleJSON(line)
         }
-        return nil
     }
 
     private func parseWatch(_ output: String) -> WatchBattery? {
@@ -352,6 +376,11 @@ class IDeviceReader: NSObject {
 
     private func checkStale() {
         let now = Date()
+        if let watch = watchChargingState.expire(at: now) {
+            // Invalidate only the charging observation, preserving the actual
+            // battery measurement date and never inventing "not charging".
+            publishWatch(watch)
+        }
         let deviceTimeout: TimeInterval = 1800
 
         // Restart bartbeat if stdout has been silent for 3 min — even when success
@@ -410,11 +439,22 @@ class IDeviceReader: NSObject {
             try proc.run()
             let deadline = Date().addingTimeInterval(timeout)
             while proc.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-            if proc.isRunning { proc.terminate() }
+            if proc.isRunning {
+                Self.stopTimedOutHelper(proc)
+            }
             return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         } catch {
             return ""
         }
+    }
+
+    static func stopTimedOutHelper(_ process: Process, grace: TimeInterval = 0.5) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(grace)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        process.waitUntilExit()
     }
 }
 

@@ -8,8 +8,8 @@ settings:
     DEVELOPMENT_TEAM: 4Y3FA3437G
     ENABLE_HARDENED_RUNTIME: YES
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.2"
-    CURRENT_PROJECT_VERSION: "7"
+    MARKETING_VERSION: "1.2.3"
+    CURRENT_PROJECT_VERSION: "8"
     CODE_SIGN_STYLE: Automatic
     # The bundled USB/Wi-Fi helpers are currently Apple Silicon only.
     ARCHS: arm64

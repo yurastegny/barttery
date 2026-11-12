@@ -5,6 +5,12 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Registry success is not evidence of a live charger state. Background mode
+ * must also listen for transitions; one-shot mode streams only as fallback. */
+static int watchlog_should_stream(int registry_result, int once) {
+    return registry_result != 0 || !once;
+}
+
 /* Only accept a present Watch power-source update, never phone/AirPods data. */
 static int watchlog_level(const char *line) {
     if (!strstr(line, "bluetoothd(CoreUtils)") ||

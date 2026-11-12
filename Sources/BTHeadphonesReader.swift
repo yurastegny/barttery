@@ -34,7 +34,8 @@ class BTHeadphonesReader: NSObject {
             guard !lower.contains("airpod") else { continue }
             guard !lower.contains("keyboard"), !lower.contains("mouse"), !lower.contains("trackpad") else { continue }
             guard let level = privateBatteryLevel(device), level > 0, level <= 100 else { continue }
-            result.append(AccessoryBattery(name: name, level: level, charging: false, updatedAt: Date()))
+            result.append(AccessoryBattery(name: name, level: level, charging: false,
+                                           updatedAt: Date(), chargingKnown: false))
         }
         DispatchQueue.main.async { [weak self] in self?.onUpdate?(result) }
     }

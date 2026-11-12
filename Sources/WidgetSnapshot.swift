@@ -8,21 +8,23 @@ struct WidgetBatteryDevice: Codable, Equatable, Identifiable {
     let level: Int
     let isCharging: Bool
     let isPaused: Bool
+    let chargingKnown: Bool
     let updatedAt: Date
 
     init(id: String, name: String, symbol: String, level: Int, isCharging: Bool,
-         isPaused: Bool = false, updatedAt: Date) {
+          isPaused: Bool = false, updatedAt: Date, chargingKnown: Bool = true) {
         self.id = id
         self.name = name
         self.symbol = symbol
         self.level = level
-        self.isCharging = isCharging
+        self.isCharging = chargingKnown && isCharging
         self.isPaused = isPaused
+        self.chargingKnown = chargingKnown
         self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, symbol, level, isCharging, isPaused, updatedAt
+        case id, name, symbol, level, isCharging, isPaused, updatedAt, chargingKnown
     }
 
     init(from decoder: Decoder) throws {
@@ -33,15 +35,18 @@ struct WidgetBatteryDevice: Codable, Equatable, Identifiable {
                   level: try values.decode(Int.self, forKey: .level),
                   isCharging: try values.decode(Bool.self, forKey: .isCharging),
                   isPaused: try values.decodeIfPresent(Bool.self, forKey: .isPaused) ?? false,
-                  updatedAt: try values.decode(Date.self, forKey: .updatedAt))
+                  updatedAt: try values.decode(Date.self, forKey: .updatedAt),
+                  chargingKnown: try values.decodeIfPresent(Bool.self, forKey: .chargingKnown) ?? true)
     }
 
     var statusSymbol: String? {
+        if !chargingKnown { return nil }
         if isPaused { return "pause.fill" }
         return isCharging ? "bolt.fill" : nil
     }
 
     var statusDescription: String {
+        if !chargingKnown { return "Battery \(level)%" }
         if isPaused { return "Charging paused" }
         return isCharging ? "Charging" : "On battery"
     }

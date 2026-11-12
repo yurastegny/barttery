@@ -151,7 +151,7 @@ class BLEDeviceReader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     func batteryReading(for id: UUID, name: String) -> AccessoryBattery? {
         guard let level = levels[id] else { return nil }
         return AccessoryBattery(name: name, level: level, charging: chargingStates[id] ?? false,
-                                updatedAt: measurementDates[id])
+                                updatedAt: measurementDates[id], chargingKnown: false)
     }
 
     private func remove(_ id: UUID) {

@@ -112,7 +112,8 @@ struct MenuContentView: View {
                 }
                 if let watch = monitor.watchBattery {
                     DeviceRow(icon: "applewatch", name: watch.name,
-                              battery: watch.level, state: watch.isCharging ? .charging : .discharging, device: .watch)
+                              battery: watch.level, state: watch.isCharging ? .charging : .discharging,
+                              device: .watch, chargingKnown: watch.chargingKnown)
                 }
             }
             .padding(.leading, 20)
@@ -313,6 +314,7 @@ struct DeviceRow: View {
     let battery: Int
     let state: ChargeState
     let device: BatteryDevice
+    var chargingKnown: Bool = true
 
     @State private var expanded = false
 
@@ -333,6 +335,7 @@ struct DeviceRow: View {
                             Image(systemName: chargeIcon ?? "bolt.fill")
                                 .font(.system(size: 12, weight: .medium))
                                 .opacity(chargeIcon != nil ? 1 : 0)
+                                .help("Battery status")
                             Text("\(battery)%").font(.system(size: 17, weight: .regular))
                         }
                     }
@@ -354,6 +357,7 @@ struct DeviceRow: View {
     }
 
     private var chargeIcon: String? {
+        if !chargingKnown { return nil }
         switch state {
         case .charging:     return "bolt.fill"
         case .plugged:      return "powerplug.fill"
@@ -498,7 +502,8 @@ struct AccessoryRow: View {
                         HStack(spacing: 6) {
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 12, weight: .medium))
-                                .opacity(accessory.charging ? 1 : 0)
+                                .opacity(accessory.chargingKnown && accessory.charging ? 1 : 0)
+                                .help("Charging")
                             Text("\(accessory.level)%").font(.system(size: 17, weight: .regular))
                         }
                     }

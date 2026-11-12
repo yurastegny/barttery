@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import IOKit
 import IOKit.hid
+import os
 
 // Reads battery level and charging state from supported Logitech devices via HID++ 2.0.
 // Uses IOKit in shared (non-exclusive) mode with Input Monitoring permission.
@@ -9,7 +10,10 @@ import IOKit.hid
 // serves as a fallback (discrete levels, trend-based charging).
 // Protocol modeled on https://github.com/pcolman/mx-battery (MIT).
 class LogitechReader {
+    private static let logger = Logger(subsystem: "me.yura.barttery", category: "LogitechBattery")
+    private var lastAccessGranted: Bool?
     var onUpdate: (([AccessoryBattery]) -> Void)?
+    var onChargingUpdate: (([LogitechChargingReading]) -> Void)?
     /// Called immediately after IOKit enumeration, before battery queries complete.
     /// Provides visible device names so callers can remove disconnected devices.
     /// Visibility alone must not suppress battery readings from fallback readers.
@@ -46,6 +50,14 @@ class LogitechReader {
         0xB35D: "K780 Keyboard",
         0xB350: "K850 Keyboard",
     ]
+
+    static func canonicalName(for name: String) -> String? {
+        func normalized(_ value: String) -> String {
+            String(value.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+        let key = normalized(name)
+        return supportedPIDs.values.first { normalized($0) == key }
+    }
 
     private static let skippedKey = "logitech.inputMonitoring.skipped"
 
@@ -95,8 +107,14 @@ class LogitechReader {
 
     private func readDevices() {
         guard !isReading else { return }
-        guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else {
+        let accessGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        if lastAccessGranted != accessGranted {
+            Self.logger.notice("HID battery access granted: \(accessGranted, privacy: .public)")
+            lastAccessGranted = accessGranted
+        }
+        guard accessGranted else {
             onDevicesFound?([])
+            onChargingUpdate?([])
             onUpdate?([])
             return
         }
@@ -105,6 +123,7 @@ class LogitechReader {
             supported: Self.supportedPIDs,
             lastKnownLevels: lastKnownLevels,
             onDevicesFound: { [weak self] names in self?.onDevicesFound?(names) },
+            onChargingUpdate: { [weak self] readings in self?.onChargingUpdate?(readings) },
             completion: { [weak self] items in
                 guard let self else { return }
                 self.isReading = false
@@ -146,6 +165,7 @@ private enum HIDPPEngine {
     static func readAll(supported: [Int: String],
                         lastKnownLevels: [String: Int],
                         onDevicesFound: @escaping (Set<String>) -> Void,
+                        onChargingUpdate: @escaping ([LogitechChargingReading]) -> Void,
                         completion: @escaping ([AccessoryBattery]) -> Void) {
         Thread.detachNewThread {
             let mgr = IOHIDManagerCreate(kCFAllocatorDefault, 0)
@@ -178,19 +198,29 @@ private enum HIDPPEngine {
             DispatchQueue.main.async { onDevicesFound(names) }
 
             var results: [AccessoryBattery] = []
+            var chargingResults: [LogitechChargingReading] = []
             for (dev, name) in matched {
-                if let batt = queryDevice(dev: dev, name: name,
-                                          lastKnownLevel: lastKnownLevels[name]) {
-                    results.append(batt)
+                if let status = queryDevice(dev: dev, lastKnownLevel: lastKnownLevels[name]) {
+                    let date = Date()
+                    if status.chargingKnown {
+                        chargingResults.append(LogitechChargingReading(name: name, charging: status.charging, updatedAt: date))
+                    }
+                    if let level = status.level, status.reportsLevel {
+                        results.append(AccessoryBattery(name: name, level: level, charging: status.charging,
+                                                        updatedAt: date, chargingKnown: status.chargingKnown))
+                    }
                 }
             }
 
-            DispatchQueue.main.async { completion(results) }
+            DispatchQueue.main.async {
+                onChargingUpdate(chargingResults)
+                completion(results)
+            }
         }
     }
 
-    private static func queryDevice(dev: IOHIDDevice, name: String,
-                                    lastKnownLevel: Int?) -> AccessoryBattery? {
+    private static func queryDevice(dev: IOHIDDevice,
+                                    lastKnownLevel: Int?) -> LogitechBatteryStatus? {
         guard IOHIDDeviceOpen(dev, 0) == kIOReturnSuccess else { return nil }
         defer { IOHIDDeviceClose(dev, 0) }
 
@@ -217,8 +247,8 @@ private enum HIDPPEngine {
         for feat in LogitechBatteryFeature.allCases {
             guard let featIdx = getFeatureIndex(dev: dev, queue: queue, code: feat.rawValue),
                   let resp = send(dev: dev, queue: queue, featIdx: featIdx, fn: feat.function),
-                  let battery = feat.decode(resp, lastKnownLevel: lastKnownLevel) else { continue }
-            return AccessoryBattery(name: name, level: battery.level, charging: battery.charging, updatedAt: Date())
+                  let battery = feat.decodeStatus(resp, lastKnownLevel: lastKnownLevel) else { continue }
+            return battery
         }
         return nil
     }

@@ -66,11 +66,12 @@ extension DeviceBatteryMonitor {
     func widgetSnapshot(at date: Date = Date()) -> WidgetBatterySnapshot {
         var devices: [WidgetBatteryDevice] = []
         func append(_ id: String, _ name: String, _ symbol: String, _ level: Int?, _ charging: Bool,
-                    paused: Bool = false, updatedAt: Date) {
+                    paused: Bool = false, updatedAt: Date, chargingKnown: Bool = true) {
             guard let level else { return }
             devices.append(WidgetBatteryDevice(id: id, name: name, symbol: symbol,
                                                level: min(100, max(0, level)),
-                                               isCharging: charging, isPaused: paused, updatedAt: updatedAt))
+                                                isCharging: charging, isPaused: paused, updatedAt: updatedAt,
+                                                chargingKnown: chargingKnown))
         }
 
         if let mac = macBattery {
@@ -93,7 +94,7 @@ extension DeviceBatteryMonitor {
         }
         if let watch = watchBattery {
             append("watch", watch.name, "applewatch", watch.level, watch.isCharging,
-                   updatedAt: syncTimes[BatteryDevice.watch.rawValue] ?? .distantPast)
+                   updatedAt: watch.updatedAt, chargingKnown: watch.chargingKnown)
         }
         for accessory in accessories {
             devices.append(WidgetBatteryDevice(accessory: accessory))
@@ -106,6 +107,6 @@ extension WidgetBatteryDevice {
     init(accessory: AccessoryBattery) {
         self.init(id: "accessory.\(accessory.name)", name: accessory.name, symbol: accessory.icon,
                   level: min(100, max(0, accessory.level)), isCharging: accessory.charging,
-                  updatedAt: accessory.updatedAt ?? .distantPast)
+                  updatedAt: accessory.updatedAt ?? .distantPast, chargingKnown: accessory.chargingKnown)
     }
 }

@@ -561,7 +561,8 @@ static int wifi_prepare(wifi_state_t *st, const char *udid, const char *ip_overr
 static int read_watch(wifi_state_t *st, const char *udid, const char *ip_override,
                       char *name, size_t name_len,
                       char *model, size_t model_len,
-                      int *level, int *charging, char *watch_udid, size_t watch_len) {
+                       int *level, int *charging, char *watch_udid, size_t watch_len) {
+    *charging = -1;
     if (wifi_prepare(st, udid, ip_override) != 0) return -1;
 
     plist_t reg_req = plist_new_dict();
@@ -633,7 +634,8 @@ static int read_watch(wifi_state_t *st, const char *udid, const char *ip_overrid
                 break;
             }
             case 3:
-                *charging = plist_bool_val_is_true(val) ? 1 : 0;
+                if (plist_get_node_type(val) == PLIST_BOOLEAN)
+                    *charging = plist_bool_val_is_true(val) ? 1 : 0;
                 break;
             }
         }
@@ -662,8 +664,10 @@ static void emit_watch(const char *watch_udid, const char *name,
     json_escape(name, ename, sizeof ename);
     json_escape(model, emodel, sizeof emodel);
     printf("{\"type\":\"watch\",\"udid\":\"%s\",\"name\":\"%s\",\"model\":\"%s\","
-           "\"level\":%d,\"charging\":%s}\n",
-           watch_udid, ename, emodel, level, charging ? "true" : "false");
+           "\"level\":%d,\"source\":\"wifi-registry\"",
+           watch_udid, ename, emodel, level);
+    if (charging >= 0) printf(",\"charging\":%s", charging ? "true" : "false");
+    puts("}");
     fflush(stdout);
 }
 
@@ -736,13 +740,19 @@ static int stream_watch(wifi_state_t *st, const char *udid, const char *ip_hint,
         return -1;
     }
     dbg("listening for live Watch power-source events");
-    time_t deadline = time(NULL) + (once ? 25 : 300);
+    time_t deadline = time(NULL) + 25;
+    time_t next_heartbeat = 0;
     time_t next_phone_poll = time(NULL) + POLL_S;
     char line[16384], chunk[4096];
     size_t used = 0;
     int overflow = 0, emitted = 0;
-    while (time(NULL) < deadline) {
+    while (!once || time(NULL) < deadline) {
         if (!once && !stdin_alive()) break;
+        if (!once && time(NULL) >= next_heartbeat) {
+            puts("{\"type\":\"watch-stream\"}");
+            fflush(stdout);
+            next_heartbeat = time(NULL) + 15;
+        }
         if (time(NULL) >= next_phone_poll) {
             poll_phone(st, udid);
             next_phone_poll = time(NULL) + POLL_S;
@@ -816,7 +826,10 @@ int main(int argc, char **argv) {
             emit_watch(wid, name, model, level, charging);
             poll_phone(&st, udid);
         }
-        else stream_watch(&st, udid, ip_hint, once);
+        /* A successful registry query does not make its charging bit live.
+         * Continue listening for charger transitions even when that query
+         * succeeds, rather than listening only when companion_proxy fails. */
+        if (watchlog_should_stream(rc, once)) stream_watch(&st, udid, ip_hint, once);
 
         if (once) break;
 
