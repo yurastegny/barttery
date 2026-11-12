@@ -6,6 +6,26 @@
     <description>Signed updates for Barttery.</description>
     <language>en</language>
     <item>
+      <title>1.2.2</title>
+      <pubDate>Fri, 13 Nov 2026 00:50:31 +0500</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.2.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"><![CDATA[# Barttery 1.2.2
+
+- Fixes a packaging error that prevented device helpers from starting in signed releases, affecting iPhone, iPad, and Apple Watch readings.
+- Bundled libraries now resolve relative to each helper, including transitive dependencies, without relying on `DYLD_LIBRARY_PATH`.
+- Keeps Hardened Runtime and library validation enabled.
+- Adds build-time dependency checks and sets helper executable permissions before signing, instead of modifying installed application resources at launch.
+- Fixes last-update timestamps for Logitech and other accessories, preserving each device's own measurement time when it is renamed or cached.
+- Replaces excessive elapsed-time counters with readable units and explicit unknown-date states; widgets use the same per-device timestamps.
+
+Version 1.2.1 users can use Sparkle once this release is published. Users of 1.2.0 and earlier must update manually or through Homebrew.
+]]></description>
+      <enclosure url="https://github.com/yurastegny/barttery/releases/download/v1.2.2/Barttery-1.2.2.dmg" length="8791131" type="application/octet-stream" sparkle:edSignature="pCuyIfj3y0dcoupy0V56YsJj0tY3olRG5YASF5G4+9MGrnkqhFeSIJQc3U6DQ37NNl2HU5gXo/2PEml0e+VcDA=="/>
+    </item>
+    <item>
       <title>1.2.1</title>
       <pubDate>Sun, 01 Nov 2026 22:34:54 +0500</pubDate>
       <sparkle:version>5</sparkle:version>

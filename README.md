@@ -58,7 +58,8 @@ measurement timestamps.
 
 ## Installation
 
-Version **1.2.1** includes Sparkle in-app updates, the desktop widget, and a Liquid
+Version **1.2.2** fixes iPhone/Apple Watch device helper loading and accessory
+last-update timestamps. It includes Sparkle in-app updates, the desktop widget, and a Liquid
 Glass icon on macOS 26 and later. Both the app and DMG are signed with
 Developer ID and notarized by Apple; no Gatekeeper exception is normally needed.
 
@@ -92,7 +93,7 @@ of Applications before installing through Homebrew. Do not delete your settings.
 
 ### Download the DMG
 
-- Download `Barttery-1.2.1.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
+- Download `Barttery-1.2.2.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
 - Open the DMG file
 - Drag the Barttery app to your Applications folder
 - Launch Barttery — it appears in the menu bar
