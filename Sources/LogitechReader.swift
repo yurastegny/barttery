@@ -39,6 +39,7 @@ class LogitechReader {
         0xB00E: "MX Ergo",
         0xB010: "M720 Triathlon",
         0xB018: "MX Vertical",
+        0xB020: "MX Vertical",
         // MX Keys keyboards
         0xB35B: "MX Keys",
         0xB35C: "MX Keys for Mac",
