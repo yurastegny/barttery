@@ -4,7 +4,7 @@ import AppKit
 private let popupExpandAnimation: Animation = .easeInOut(duration: 0.2)
 private let popupCornerRadius: CGFloat = 14
 
-private struct RefreshButtonStyle: ButtonStyle {
+private struct VersionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundColor(configuration.isPressed ? .primary : .secondary)
@@ -70,23 +70,17 @@ struct MenuContentView: View {
     private var menuStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
+                Text("Barttery")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(.secondary)
+                Spacer()
                 Button {
                     NSWorkspace.shared.open(URL(string: "https://github.com/yurastegny/barttery")!)
                 } label: {
-                    Text("Barttery")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Button {
-                    monitor.refresh()
-                    WidgetSnapshotPublisher.reloadAllWidgets()
-                } label: {
-                    Text("Refresh")
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                         .font(.system(size: 14, weight: .regular))
                 }
-                .buttonStyle(RefreshButtonStyle())
+                .buttonStyle(VersionButtonStyle())
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
