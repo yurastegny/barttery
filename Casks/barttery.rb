@@ -1,6 +1,6 @@
 cask "barttery" do
-  version "1.2.3"
-  sha256 "e11afa2017d925048d6024751b44b01e92c7c223e374b54ff6cc7f2a442064a0"
+  version "1.2.4"
+  sha256 "0a3d0d47d5189138dd3f0215dbd0d086bbc641cb22b3471a3929719c82187e77"
 
   url "https://github.com/yurastegny/barttery/releases/download/v#{version}/Barttery-#{version}.dmg"
   name "Barttery"
