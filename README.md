@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./img/appicon.png" width="256" height="256" alt="Barttery's icon"/>
+  <img src="./img/barttery@2x.webp" width="256" height="256" alt="Barttery's icon"/>
 </p>
 
 # Barttery
