@@ -6,6 +6,26 @@
     <description>Signed updates for Barttery.</description>
     <language>en</language>
     <item>
+      <title>1.2.4</title>
+      <pubDate>Mon, 16 Nov 2026 21:40:07 +0500</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>1.2.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"><![CDATA[# Barttery 1.2.4
+
+- Adds HID++ battery support for MX Vertical devices reporting Bluetooth product ID `0xB020`. Thanks to @thoemmi.
+- Replaces the header Refresh button with the current app version, linking to the GitHub repository without changing the cursor on hover.
+- Removes the link from the app name in the header.
+- Updates the README logo.
+
+Includes the desktop widget and Sparkle in-app updates.
+
+Logitech HID++ readings require Input Monitoring permission for Barttery. Users of 1.2.0 and earlier must update manually or through Homebrew.
+]]></description>
+      <enclosure url="https://github.com/yurastegny/barttery/releases/download/v1.2.4/Barttery-1.2.4.dmg" length="8811306" type="application/octet-stream" sparkle:edSignature="OnkkXdG+28v+glBhKsfTD9ovYvpfuDTxiNuiIJT9XC0l30AdMIaPOQNAmtXI8t5rPRSHpANKbehVrMX0tkbMBQ=="/>
+    </item>
+    <item>
       <title>1.2.3</title>
       <pubDate>Fri, 13 Nov 2026 03:58:00 +0500</pubDate>
       <sparkle:version>8</sparkle:version>
