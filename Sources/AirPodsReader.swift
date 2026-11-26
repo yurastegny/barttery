@@ -1,7 +1,6 @@
 import CoreBluetooth
 import Foundation
 import IOBluetooth
-import ObjectiveC
 
 struct AirPodsBattery {
     let left:  Int?   // 0-100, nil = not visible (in case / unavailable)
@@ -41,12 +40,6 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
     private var plistLevels: PlistLevels?
     private var lastBattery: AirPodsBattery?
 
-    // Cached selectors for framework parsing
-    private let selAlloc    = NSSelectorFromString("alloc")
-    private let selInitData = NSSelectorFromString("initWithData:")
-    private let selPayloads = NSSelectorFromString("payloads")
-    private var advClass: NSObject.Type?
-
     private struct PlistLevels {
         let left: Int?
         let right: Int?
@@ -54,8 +47,6 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
     }
 
     func startMonitoring() {
-        dlopen("/System/Library/PrivateFrameworks/AudioAccessoryServices.framework/AudioAccessoryServices", RTLD_NOW)
-        advClass = NSClassFromString("AAManufacturerDataAdvertisement") as? NSObject.Type
         refreshPlist()
         watchPlist()
         central = CBCentralManager(delegate: self, queue: .main)
@@ -107,23 +98,14 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
               mfr[2] == 0x07
         else { return }
 
-        // Check lid state off the main thread to avoid retain issues with the framework.
-        // The result arrives on main and gates whether we proceed.
-        let mfrCopy = mfr
-        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
-            let lidClosed = self?.isLidClosed(mfrCopy) ?? false
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if lidClosed {
-                    // Lid is shut: pods not in use, hide the row and arm the timer
-                    // so it hides even if lid is opened slowly while still in range
-                    self.resetHideTimer()
-                    self.onUpdate?(nil)
-                    return
-                }
-                self.handleAdvertisement(mfrCopy)
-            }
+        if Self.isLidClosed(mfr) {
+            // Lid is shut: pods not in use, hide the row and arm the timer
+            // so it hides even if lid is opened slowly while still in range
+            resetHideTimer()
+            onUpdate?(nil)
+            return
         }
+        handleAdvertisement(mfr)
     }
 
     private func handleAdvertisement(_ mfr: Data) {
@@ -177,16 +159,15 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
 
     // MARK: - Lid closed detection
 
-    // Called on a background thread to avoid retain-cycle crash in BLE callback.
-    // Uses alloc+init split with correct ownership: alloc is unretained (init consumes it).
-    private func isLidClosed(_ mfr: Data) -> Bool {
-        guard let cls = advClass else { return false }
-        // takeUnretainedValue on alloc: init will consume the +1, so we must not take it here
-        guard let obj = cls.perform(selAlloc)?.takeUnretainedValue() as? NSObject else { return false }
-        guard let adv = obj.perform(selInitData, with: mfr as NSData)?.takeRetainedValue() as? NSObject else { return false }
-        guard let payloads = adv.perform(selPayloads)?.takeUnretainedValue() as? [AnyObject],
-              let payload = payloads.first else { return false }
-        return (payload as AnyObject).value(forKey: "lidClosed") as? Int == 1
+    // Proximity-pairing message layout (company ID stripped by CoreBluetooth):
+    // [2] type 0x07, [3] length 0x19, [10] lid flags. Bit 3 means the lid is closed.
+    // Parse the bytes directly instead of asking AudioAccessoryServices: on macOS 27
+    // its payload class (AAProximityPairingPayload) no longer exposes `lidClosed`,
+    // and the KVC call raised an uncaught NSUnknownKeyException that killed the app
+    // as soon as a nearby Apple device advertised.
+    static func isLidClosed(_ mfr: Data) -> Bool {
+        guard mfr.count >= 11, mfr[2] == 0x07, mfr[3] == 0x19 else { return false }
+        return (mfr[10] & 0x08) != 0
     }
 
     // MARK: - Hide timer
@@ -305,16 +286,6 @@ class AirPodsReader: NSObject, CBCentralManagerDelegate {
         }
 
         return bestLevels
-    }
-
-    private func plistLevel(_ info: AnyObject, sel: String) -> Int? {
-        let s = NSSelectorFromString(sel)
-        guard info.responds(to: s),
-              let bat = info.perform(s)?.takeUnretainedValue() as AnyObject?,
-              let lvl = bat.value(forKey: "level") as? Double,
-              lvl > 0
-        else { return nil }
-        return Int(ceil(lvl * 100)).clamped(to: 1...100)
     }
 
     // MARK: - Bluetooth connect / disconnect
