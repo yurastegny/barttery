@@ -6,6 +6,25 @@
     <description>Signed updates for Barttery.</description>
     <language>en</language>
     <item>
+      <title>1.2.5</title>
+      <pubDate>Thu, 26 Nov 2026 10:54:12 +0500</pubDate>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>1.2.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"><![CDATA[# Barttery 1.2.5
+
+- Fixes a crash on macOS 27 when nearby Apple devices (AirPods, iPhone, iPad) sent Bluetooth proximity advertisements.
+- Widgets now refresh their device list promptly when devices appear or disappear, without exhausting WidgetKit's refresh budget.
+- Improves Logitech Bluetooth (BLE) HID++ detection by preferring the HID++ collection and normalizing BLE input report IDs. Adds more detailed Logitech diagnostics to Console.
+- If a Logitech device still does not appear, quit Logi Options+ or disable Karabiner-Elements' "Modify events" for that device, then restart Barttery.
+
+Includes the desktop widget and Sparkle in-app updates. Signed with Developer ID and notarized by Apple.
+
+Logitech HID++ readings require Input Monitoring permission for Barttery. Users of 1.2.0 and earlier must update manually or through Homebrew.]]></description>
+      <enclosure url="https://github.com/yurastegny/barttery/releases/download/v1.2.5/Barttery-1.2.5.dmg" length="8820900" type="application/octet-stream" sparkle:edSignature="Zy18ga4K1GLzhx7nSKFpcgcUS1XY93eJBbPuqyaPrWgaA/GA1V40Em4j+FF6CD5NGvi89ZmOYlm6beFPGsWPAA=="/>
+    </item>
+    <item>
       <title>1.2.4</title>
       <pubDate>Mon, 16 Nov 2026 21:40:07 +0500</pubDate>
       <sparkle:version>9</sparkle:version>
