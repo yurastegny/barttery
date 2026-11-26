@@ -107,7 +107,7 @@ of Applications before installing through Homebrew. Do not delete your settings.
 
 ### Download the DMG
 
-- Download `Barttery-1.2.4.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
+- Download `Barttery-1.2.5.dmg` or a newer release from the [releases page](https://github.com/yurastegny/barttery/releases/latest)
 - Open the DMG file
 - Drag the Barttery app to your Applications folder
 - Launch Barttery — it appears in the menu bar
