@@ -7,9 +7,11 @@ import WidgetKit
 final class WidgetSnapshotPublisher {
     private var changes: AnyCancellable?
     private var pendingReload: DispatchWorkItem?
+    private var pendingReloadDelay: TimeInterval?
     private var lastReload = Date.distantPast
     private var hasPublishedSnapshot = false
-    private static let logger = Logger(subsystem: "com.yura.barttery", category: "Widget")
+    private var lastDeviceIDs: [String] = []
+    private static let logger = Logger(subsystem: "me.yura.barttery", category: "Widget")
 
     init(monitor: DeviceBatteryMonitor) {
         changes = monitor.objectWillChange
@@ -26,14 +28,32 @@ final class WidgetSnapshotPublisher {
     private func publish(_ monitor: DeviceBatteryMonitor) {
         // The plain SwiftPM/DMG build deliberately has no App Group entitlement.
         guard Bundle.main.object(forInfoDictionaryKey: "BartteryWidgetsEnabled") as? Bool == true else { return }
+        let snapshot = monitor.widgetSnapshot()
         do {
-            try WidgetSnapshotStore.write(monitor.widgetSnapshot())
+            try WidgetSnapshotStore.write(snapshot)
+
+            let ids = snapshot.devices.map(\.id)
+            let listChanged = ids != lastDeviceIDs
+            lastDeviceIDs = ids
+            Self.logger.debug("Snapshot devices: \(ids.joined(separator: ", "), privacy: .public)")
+
             if !hasPublishedSnapshot {
                 hasPublishedSnapshot = true
                 lastReload = Date()
+                Self.logger.notice("Initial device list: \(ids.joined(separator: ", "), privacy: .public)")
                 Self.reloadAllWidgets()
+            } else if listChanged {
+                Self.logger.notice("Device list changed: \(ids.joined(separator: ", "), privacy: .public)")
+                // The widget's device list must not wait for the value refresh: on
+                // launch the first snapshot is Mac-only, and the other readers report
+                // a second or two later. Reloading only on the value schedule left the
+                // widget showing that Mac-only draft.
+                requestReload(delay: 15, allKinds: true)
             } else {
-                requestReload()
+                // Match the timeline cadence in BatteryTimelineProvider. Requesting a
+                // reload every few minutes burns WidgetKit's daily refresh budget, so
+                // later reloads get dropped and the widget looks frozen.
+                requestReload(delay: 15 * 60, allKinds: false)
             }
         } catch {
             Self.logger.error("Cannot save widget snapshot: \(error.localizedDescription, privacy: .public)")
@@ -45,20 +65,34 @@ final class WidgetSnapshotPublisher {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    private func requestReload() {
-        guard pendingReload == nil else { return }
+    private func requestReload(delay: TimeInterval, allKinds: Bool) {
         // Coalesce frequent BLE updates; WidgetKit also applies its own refresh budget.
-        let delay = max(0, 5 * 60 - Date().timeIntervalSince(lastReload))
+        // A shorter pending reload wins, so a device-list change is not stuck behind
+        // an already-scheduled five-minute value refresh.
+        if let pendingDelay = pendingReloadDelay, pendingDelay <= delay {
+            return
+        }
+        pendingReload?.cancel()
+        pendingReload = nil
+        pendingReloadDelay = nil
+
+        let effective = max(0, delay - Date().timeIntervalSince(lastReload))
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingReload = nil
+            self.pendingReloadDelay = nil
             self.lastReload = Date()
-            for layout in WidgetBatteryLayout.allCases {
-                WidgetCenter.shared.reloadTimelines(ofKind: layout.widgetKind)
+            if allKinds {
+                WidgetCenter.shared.reloadAllTimelines()
+            } else {
+                for layout in WidgetBatteryLayout.allCases {
+                    WidgetCenter.shared.reloadTimelines(ofKind: layout.widgetKind)
+                }
             }
         }
         pendingReload = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        pendingReloadDelay = effective
+        DispatchQueue.main.asyncAfter(deadline: .now() + effective, execute: work)
     }
 }
 
